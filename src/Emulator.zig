@@ -12,60 +12,41 @@ const ines = @import("loader/ines.zig");
 const Emulator = @This();
 
 vram: [2048]u8,
-// mapper:UxRom, 
-mapper:NRom, 
-rom: []u8,
-chRom: []u8,
-chram: []u8,
+mapper: Mapper,
 apu: Apu,
 ppu: Ppu,
 controller: Controller,
 memoryController: MemoryController,
 cpu: Cpu,
 pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
+    // var f = try std.fs.openFileAbsolute("/foo/snes/sprite.nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/DuckTales (USA).nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/controller.nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/Castlevania.USA.nes", .{});
+    var f = try std.fs.openFileAbsolute("/foo/snes/Commando (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Total.Recall.nes", .{});
-    var f = try std.fs.openFileAbsolute("/foo/snes/testroms/palette_fill.nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/testroms/palette_fill.nes", .{});
     defer f.close();
     // _ = try nestle.ines.hasMagicByte(&f);
-    const romInfo = try ines.readRom(gpa, &f);
     emu.* = Emulator{
-        .rom = romInfo.prgROM,
         .vram = std.mem.zeroes([2048]u8),
-        .chram = try gpa.alloc(u8, 0x2000), // 8kb
-        .chRom = romInfo.chrROM,
         .mapper = undefined,
         .apu = undefined,
         .ppu = undefined,
         .controller = undefined,
         .memoryController = undefined,
-        .cpu = undefined 
+        .cpu = undefined,
     };
-    for (emu.chram) |*b| {
-        b.* = 0;
-    }
-    emu.mapper = NRom.init(romInfo.prgROM, 
-        romInfo.chrROM,
-        emu.chram, 
-        &emu.vram, 
-        Mapper.Mirroring.Horizontal); // FIXME: mirroring
+    const romInfo = try ines.readRom(gpa, &f, &emu.vram);
+    emu.mapper = romInfo.mapper;
 
-    // _ = std.fs.File.writer(file: File, buffer: []u8)
-    // emu.mapper = UxRom.init(romInfo.prgROM, 
-    //     romInfo.chrROM,
-    //     emu.chram, 
-    //     &emu.vram, 
-    //     Mapper.Mirroring.Horizontal); // FIXME: mirroring
     emu.apu = Apu.init();
-    emu.ppu = Ppu.init(emu.mapper.interface(), outputBuffer);
+    emu.ppu = Ppu.init(emu.mapper, outputBuffer);
     emu.controller = Controller.init();
-    emu.memoryController = MemoryController{ 
-        .mapper = emu.mapper.interface(),
-        .apu = &emu.apu,
-        .ppu = &emu.ppu,
-        .controller = &emu.controller
-    };
+    emu.memoryController = MemoryController{ .mapper = emu.mapper, .apu = &emu.apu, .ppu = &emu.ppu, .controller = &emu.controller };
     emu.ppu.memoryController = &emu.memoryController;
     emu.cpu = Cpu.init(&emu.memoryController);
+    emu.ppu.cpu = &emu.cpu;
     const low: u16 = emu.memoryController.read(0xFFFC);
     const high: u16 = emu.memoryController.read(0xFFFD);
     emu.cpu.PC = low + (high * 256);
@@ -86,9 +67,7 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
 }
 
 pub fn deinit(self: *Emulator, gpa: std.mem.Allocator) void {
-    defer gpa.free(self.rom);
-    defer gpa.free(self.chram);
-    defer gpa.free(self.chRom);
+    self.mapper.deinit(gpa);
 }
 
 pub fn setJoystickState(self: *Emulator, state: Controller.JoystickState) void {
@@ -109,6 +88,8 @@ pub fn run_one_frame(self: *Emulator) void {
 
     var cycles: usize = 0;
     self.ppu.ppuStatus.VBlank = false;
+    // self.ppu.ppuStatus.sprite0Hit = true;
+    // self.ppu.ppuStatus.
     while (cycles < CyclesPerFrameActive) {
         const instr = self.cpu.decode2(self.cpu.PC);
         cycles += self.cpu.interpret(instr);
@@ -162,5 +143,4 @@ pub fn run_until(self: *Emulator, pc: u16) usize {
         }
         totalCycles += cycles;
     }
-
 }

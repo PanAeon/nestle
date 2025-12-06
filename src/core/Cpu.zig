@@ -759,7 +759,7 @@ pub fn interpret(self: *Cpu, instr: DecodedInstruction) u8 {
                 value = @as(u16, low) + ((@as(u16, high) << 8));
                 self.PC = value;
             } else if (instr.mode == .Absolute) {
-                self.PC =  (@as(u16, instr.arg0) + ((@as(u16, instr.arg1) << 8)));
+                self.PC = (@as(u16, instr.arg0) + ((@as(u16, instr.arg1) << 8)));
             }
         },
         .JSR => {

@@ -78,7 +78,7 @@ pub fn init() Apu {
 }
 
 pub fn read(self: *Apu, addr: u16) u8 {
-     std.debug.print("apu read: 0x{X}\n", .{addr});
+    std.debug.print("apu read: 0x{X}\n", .{addr});
     switch (addr) {
         0x4015 => return @bitCast(self.status),
         else => return 0, // maybe open bus?
@@ -86,11 +86,11 @@ pub fn read(self: *Apu, addr: u16) u8 {
 }
 
 pub fn write(self: *Apu, addr: u16, data: u8) void {
-     std.debug.print("apu write: 0x{X}\n", .{addr});
+    // std.debug.print("apu write: 0x{X}\n", .{addr});
     switch (addr) {
         0x4000...0x4003 => @as([*]u8, @ptrCast(&self.pulse1Channel))[addr - 0x4000] = data,
         0x4004...0x4007 => @as([*]u8, @ptrCast(&self.pulse2Channel))[addr - 0x4004] = data,
-        0x4008...0x400B => @as([*]u8, @ptrCast(&self.triangleChannel))[addr - 0x400B] = data,
+        0x4008...0x400B => @as([*]u8, @ptrCast(&self.triangleChannel))[addr - 0x4008] = data,
         0x400C...0x400F => @as([*]u8, @ptrCast(&self.noiseChannel))[addr - 0x400C] = data,
         0x4010...0x4013 => {
             @as([*]u8, @ptrCast(&self.dmcChannel))[addr - 0x4010] = data;

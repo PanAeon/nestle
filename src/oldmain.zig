@@ -36,7 +36,7 @@ pub fn main() !void {
     const rom: []u8 = try nestle.ines.readRom(gpa, &f);
     defer gpa.free(rom);
 
-    var outBuffer: [256*240*4]u8 = .{0} ** (256*240*4);
+    var outBuffer: [256 * 240 * 4]u8 = .{0} ** (256 * 240 * 4);
     // _ = std.fs.File.writer(file: File, buffer: []u8)
     var vram: [0x2000]u8 = std.mem.zeroes([0x2000]u8);
     var mapper = nestle.mapper.UxRom.init(rom, &vram);
@@ -52,13 +52,13 @@ pub fn main() !void {
 
     // var totalCycles = run_until(&cpu, &ppu, 0xC638);// 3295 from here
     // cpu.print();
-    // std.debug.print("ppu vblank: {d}\n", .{ppu.ppuCtrl.VBlankNMIEnable}); 
+    // std.debug.print("ppu vblank: {d}\n", .{ppu.ppuCtrl.VBlankNMIEnable});
     // std.debug.print("total cycles: {d}\n\n", .{totalCycles});
     //
     // // 0xc5aa
     // totalCycles += run_until(&cpu, &ppu, 0xc639); // PC: 0xcba8 0xcba6 0xc189
     // cpu.print();
-    // std.debug.print("ppu vblank: {d}\n", .{ppu.ppuCtrl.VBlankNMIEnable}); 
+    // std.debug.print("ppu vblank: {d}\n", .{ppu.ppuCtrl.VBlankNMIEnable});
     // std.debug.print("total cycles: {d}\n\n", .{totalCycles});
     // const instr = cpu.decode2(cpu.PC);
     // std.debug.print("at: {any}\narg0: 0x{x}, arg1: 0x{x}\n", .{instr, instr.arg0, instr.arg1});
@@ -74,7 +74,7 @@ pub fn main() !void {
         cpu.print();
         std.debug.print("\n", .{});
     }
-    std.debug.print("PPU: ctrl: {any} \nmask:{any}\n", .{ppu.ppuCtrl, ppu.ppuMask});
+    std.debug.print("PPU: ctrl: {any} \nmask:{any}\n", .{ ppu.ppuCtrl, ppu.ppuMask });
     // std.debug.print(">> ({d},{d}):\tinstr: {any}\t{any}\t[{d}, {d}]\n", .{i, cycles, instr.name, instr.mode, instr.arg0, instr.arg1});
     // const N = 1000000;
     // var cycles: usize = 0;
@@ -157,5 +157,4 @@ fn run_until(cpu: *Cpu, ppu: *Ppu, pc: u16) usize {
         }
         totalCycles += cycles;
     }
-
 }

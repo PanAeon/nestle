@@ -7,28 +7,32 @@ prgROM: []u8,
 chrROM: []u8,
 chrRAM: []u8,
 currentBank: u16 = 0,
-internalRAM: []u8,
+vram: []u8,
 mirroring: Mirroring,
 // chrRAM: 8kb?, mirror: vertical
 
-pub fn init(rom: []u8, chrROM: []u8, chrRAM: []u8, vram: []u8, mirroring:Mirroring) UxRom {
-    return .{ 
-        .prgROM = rom, 
-        .chrRAM = chrRAM, 
-        .chrROM = chrROM,
-        .mirroring = mirroring,
-        .internalRAM = vram};
+pub fn init(gpa: std.mem.Allocator, prgROM: []u8, chrROM: []u8, chrRAM: []u8, vram: []u8, mirroring: Mirroring) !*UxRom {
+            var uxRom = try gpa.create(Mapper.UxRom);
+            uxRom.prgROM = prgROM;
+            uxRom.chrROM = chrROM;
+            uxRom.chrRAM = chrRAM;
+            uxRom.vram = vram;
+            uxRom.mirroring = mirroring;
+    return uxRom;
+}
+
+pub fn deinit(ptr: *anyopaque, gpa: std.mem.Allocator) void {
+    const m: *UxRom = @ptrCast(@alignCast(ptr));
+    gpa.free(m.prgROM);
+    gpa.free(m.chrROM);
+    gpa.free(m.chrRAM);
+    gpa.destroy(m);
 }
 
 pub fn interface(self: *UxRom) Mapper {
     return .{
         .ptr = self,
-        .vtable = &.{
-            .read = read,
-            .write = write,
-            .ppu_read = ppu_read,
-            .ppu_write = ppu_write,
-        },
+        .vtable = &.{ .read = read, .write = write, .ppu_read = ppu_read, .ppu_write = ppu_write, .deinit = deinit },
     };
 }
 
@@ -80,8 +84,8 @@ pub fn write(ptr: *anyopaque, addr: u16, data: u8) void {
     // return self.writeFn(self.ptr, addr, data);
     switch (addr) {
         // usually cartridge ram when present
-        0x6000...0x7FFF => { 
-            std.debug.print(">UxRom write on 0x{x}, value: 0x{x}", .{addr, data});
+        0x6000...0x7FFF => {
+            std.debug.print(">UxRom write on 0x{x}, value: 0x{x}", .{ addr, data });
             // m.currentBank = data & 0b0000111; //@as(u3, @truncate(data));
         },
         0x8000...0xFFFF => {
@@ -107,50 +111,50 @@ pub fn write(ptr: *anyopaque, addr: u16, data: u8) void {
 pub fn ppu_read(ptr: *anyopaque, addr: u14) u8 {
     const m: *UxRom = @ptrCast(@alignCast(ptr));
     switch (m.mirroring) {
-    .Horizontal => switch (addr) {
-        0x0000...0x1FFF => return if (m.chrROM.len == 0) m.chrRAM[addr] else m.chrROM[addr], // 8kb of chrRAM
-        //// 2kb of internal ram, but 4kb of name pages
-        0x2000...0x23FF => return m.internalRAM[addr - 0x2000],
-        0x2400...0x27FF => return m.internalRAM[addr - 0x2000],
-        0x2800...0x2BFF => return m.internalRAM[addr - 0x2800],
-        0x2C00...0x2FFF => return m.internalRAM[addr - 0x2800],
-        else =>  @panic("boo"),
-    },
-    .Vertical => switch (addr) {
-        0x0000...0x1FFF => return if (m.chrROM.len == 0) m.chrRAM[addr] else m.chrROM[addr], // 8kb of chrRAM
-        //// 2kb of internal ram, but 4kb of name pages
-        0x2000...0x23FF => return m.internalRAM[addr - 0x2000],
-        0x2400...0x27FF => return m.internalRAM[addr - 0x2400],
-        0x2800...0x2BFF => return m.internalRAM[addr - 0x2400],
-        0x2C00...0x2FFF => return m.internalRAM[addr - 0x2800],
-        else =>  @panic("boo"),
-    },
-    else => std.debug.panic("unsupported mirroring by UxRom {any}", .{m.mirroring})
+        .Horizontal => switch (addr) {
+            0x0000...0x1FFF => return if (m.chrROM.len == 0) m.chrRAM[addr] else m.chrROM[addr], // 8kb of chrRAM
+            //// 2kb of internal ram, but 4kb of name pages
+            0x2000...0x23FF => return m.vram[addr - 0x2000],
+            0x2400...0x27FF => return m.vram[addr - 0x2000],
+            0x2800...0x2BFF => return m.vram[addr - 0x2800],
+            0x2C00...0x2FFF => return m.vram[addr - 0x2800],
+            else => @panic("boo"),
+        },
+        .Vertical => switch (addr) {
+            0x0000...0x1FFF => return if (m.chrROM.len == 0) m.chrRAM[addr] else m.chrROM[addr], // 8kb of chrRAM
+            //// 2kb of internal ram, but 4kb of name pages
+            0x2000...0x23FF => return m.vram[addr - 0x2000],
+            0x2400...0x27FF => return m.vram[addr - 0x2400],
+            0x2800...0x2BFF => return m.vram[addr - 0x2400],
+            0x2C00...0x2FFF => return m.vram[addr - 0x2800],
+            else => @panic("boo"),
+        },
+        else => std.debug.panic("unsupported mirroring by UxRom {any}", .{m.mirroring}),
     }
 }
 
 pub fn ppu_write(ptr: *anyopaque, addr: u14, data: u8) void {
     const m: *UxRom = @ptrCast(@alignCast(ptr));
     switch (m.mirroring) {
-    .Horizontal => switch (addr) {
-        0x0000...0x1FFF => m.chrRAM[addr] = data, // 8kb of chrRAM
-        //// 2kb of internal ram, but 4kb of name pages
-        0x2000...0x23FF => m.internalRAM[addr - 0x2000] = data,
-        0x2400...0x27FF => m.internalRAM[addr - 0x2000] = data,
-        0x2800...0x2BFF => m.internalRAM[addr - 0x2800] = data,
-        0x2C00...0x2FFF => m.internalRAM[addr - 0x2800] = data,
-        else =>  @panic("boo"),
-    },
-    .Vertical => switch (addr) {
-        0x0000...0x1FFF => m.chrRAM[addr] = data, // 8kb of chrRAM
-        //// 2kb of internal ram, but 4kb of name pages
-        0x2000...0x23FF => m.internalRAM[addr - 0x2000] = data,
-        0x2400...0x27FF => m.internalRAM[addr - 0x2400] = data,
-        0x2800...0x2BFF => m.internalRAM[addr - 0x2400] = data,
-        0x2C00...0x2FFF => m.internalRAM[addr - 0x2800] = data,
-        else =>  @panic("boo"),
-    },
-    else => std.debug.panic("unsupported mirroring by UxRom {any}", .{m.mirroring})
+        .Horizontal => switch (addr) {
+            0x0000...0x1FFF => m.chrRAM[addr] = data, // 8kb of chrRAM
+            //// 2kb of internal ram, but 4kb of name pages
+            0x2000...0x23FF => m.vram[addr - 0x2000] = data,
+            0x2400...0x27FF => m.vram[addr - 0x2000] = data,
+            0x2800...0x2BFF => m.vram[addr - 0x2800] = data,
+            0x2C00...0x2FFF => m.vram[addr - 0x2800] = data,
+            else => @panic("boo"),
+        },
+        .Vertical => switch (addr) {
+            0x0000...0x1FFF => m.chrRAM[addr] = data, // 8kb of chrRAM
+            //// 2kb of internal ram, but 4kb of name pages
+            0x2000...0x23FF => m.vram[addr - 0x2000] = data,
+            0x2400...0x27FF => m.vram[addr - 0x2400] = data,
+            0x2800...0x2BFF => m.vram[addr - 0x2400] = data,
+            0x2C00...0x2FFF => m.vram[addr - 0x2800] = data,
+            else => @panic("boo"),
+        },
+        else => std.debug.panic("unsupported mirroring by UxRom {any}", .{m.mirroring}),
     }
 }
 
@@ -167,7 +171,6 @@ test "Horizontal must mirror horizontally" {
     try expect(mapper.ppu_read(0x20F0) == 13);
     mapper.ppu_write(0x28F0, 7);
     try expect(mapper.ppu_read(0x20F0) == 7);
-
 }
 //  $2000 and $2400 contain the first nametable,
 //  and $2800 and $2C00 contain the second nametable
@@ -184,5 +187,4 @@ test "Vertical must mirror vertically" {
     try expect(mapper.ppu_read(0x28F0) == 7);
     mapper.ppu_write(0x28F0, 9);
     try expect(mapper.ppu_read(0x2CF0) == 9);
-
 }

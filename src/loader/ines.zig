@@ -1,13 +1,20 @@
 const std = @import("std");
 const File = std.fs.File;
+const Mapper = @import("../mapper/Mapper.zig");
 // REF: https://www.nesdev.org/wiki/INES
 pub const FileReadError = error{FileTooShort};
 pub const Flags6 = packed struct {
     nametableArragement: u1, // 0 vertical
     batteryBackedPRGRam: u1, // $6000-7FFF
     trainer: u1, // 512-byte trainer at $7000-$71FF
-    alternativeNametableLayout: u1,
+    alternativeNametableLayout: u1, //???
     lowerNybbleOfMapper: u4,
+};
+pub const Flags7 = packed struct {
+    vsUnisystem: bool,
+    playchoice: bool,// PlayChoice-10 (8 KB of Hint Screen data stored after CHR data)
+    nes2_0: u2, // if equal to 2, flags 8-15 are in NES 2.0 format
+    upperNybleOfMapper: u4,
 };
 pub const Header = packed struct {
     prgRomSize: u8, //  in 16 KB units
@@ -38,34 +45,34 @@ pub fn readHeader(f: *File) !Header {
     return header;
 }
 pub const RomInfo = struct {
-    prgROM: []u8,
-    chrROM: []u8,
-    mapper: u8,
-    nametableArragement: u1
+    mapper: Mapper,
+    // mapper: u8,
+    // nametableArragement: u1
 };
 // std.ascii.hexEscape(bytes: []const u8, case: Case)
 // memory owned by caller
-pub fn readRom(allocator: std.mem.Allocator, f: *File) !RomInfo  {
+pub fn readRom(gpa: std.mem.Allocator, f: *File, vram: []u8) !RomInfo {
     const header = try readHeader(f);
     if (header.flags6.trainer == 1) {
         // for now skip 512 bytes
         try f.seekBy(512);
     }
-    var prgROM: []u8 = try allocator.alloc(u8, @as(usize, header.prgRomSize) * 16 * 1024);
+    const prgROM: []u8 = try gpa.alloc(u8, @as(usize, header.prgRomSize) * 16 * 1024);
     var nRead = try f.read(prgROM);
     if (nRead != @as(usize, header.prgRomSize) * 16 * 1024) {
         return error.FileTooShort;
     }
-    std.debug.print("header: {any}\n", .{header});
+    // std.debug.print("header: {any}\n", .{header});
     // const numBanks = header.prgRomSize;
-    const firstBankData = prgROM[0..0x4000];
-    _ = &firstBankData;
-    
+    // const firstBankData = prgROM[0..0x4000];
+    // _ = &firstBankData;
+
     var chrROM: []u8 = &.{};
     if (header.chrRomSize > 0) {
-        chrROM = try allocator.alloc(u8, @as(usize, header.chrRomSize) * 8 * 1024);
-        nRead = try f.read(prgROM);
-        // if (nRead != @as(usize, header.prgRomSize) * 16 * 1024) {
+        chrROM = try gpa.alloc(u8, @as(usize, header.chrRomSize) * 8 * 1024);
+        _ = &nRead;
+         nRead = try f.read(chrROM);
+        // if (nRead != @as(usize, header.chrRomSize) * 8 * 1024) {
         //     return error.FileTooShort;
         // }
     }
@@ -86,12 +93,35 @@ pub fn readRom(allocator: std.mem.Allocator, f: *File) !RomInfo  {
     // // std.fmt.hexToBytes(u, input: []const u8)
     //        CPU $8000-$BFFF: 16 KB switchable PRG ROM bank
     //   CPU $C000-$FFFF: 16 KB PRG ROM bank, fixed to the last bank
-    return .{ 
-        .prgROM = prgROM,
-        .chrROM = chrROM,
-        .mapper = header.flags6.lowerNybbleOfMapper,
-        .nametableArragement = header.flags6.nametableArragement
-    };
+    const mirroring = if (header.flags6.nametableArragement == 0) 
+         Mapper.Mirroring.Vertical
+        else 
+         Mapper.Mirroring.Horizontal;
+    switch (header.flags6.lowerNybbleOfMapper) {
+        0 => {
+            var nrom = try Mapper.NRom.init(gpa, prgROM, chrROM, vram, mirroring);
+            return .{ .mapper = nrom.interface() };
+        },
+        2 => {
+            const chrRAM: []u8 = if (header.chrRomSize == 0)
+                try gpa.alloc(u8, 0x2000) // 8kb
+            else
+                &.{};
+            for (chrRAM) |*b| {
+                b.* = 0;
+            }
+            var uxRom = try Mapper.UxRom.init(gpa, prgROM, chrROM, chrRAM, vram, mirroring);
+            return .{ .mapper = uxRom.interface() };
+        },
+        else => std.debug.panic("Unknown mapper {d}", .{header.flags6.lowerNybbleOfMapper}),
+    }
+    // return .{
+    //     .mapper = mapper,
+    //     // .prgROM = prgROM,
+    //     // .chrROM = chrROM,
+    //     // .mapper = header.flags6.lowerNybbleOfMapper,
+    //     // .nametableArragement = header.flags6.nametableArragement
+    // };
 }
 // -------------------------------------------------------------
 // 0x8000 .. 0xBFFF   16kb (or 0x4000 bytes)

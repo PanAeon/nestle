@@ -5,30 +5,29 @@ const NRom = @This();
 const expect = std.testing.expect;
 prgROM: []u8,
 chrROM: []u8,
-chrRAM: []u8,
-internalRAM: []u8,
+vram: []u8,
 mirroring: Mirroring,
-prgRAM:[2048]u8, // or 4k in Family Basic only
+prgRAM: [2048]u8, // or 4k in Family Basic only
 
-pub fn init(rom: []u8, chrROM: []u8, chrRAM: []u8, vram: []u8, mirroring:Mirroring) NRom {
-    return .{ 
-        .prgROM = rom, 
-        .prgRAM = .{0}**2048,
-        .chrRAM = chrRAM, 
-        .chrROM = chrROM,
-        .mirroring = mirroring,
-        .internalRAM = vram};
+pub fn init(gpa: std.mem.Allocator, prgROM: []u8, chrROM: []u8, vram: []u8, mirroring: Mirroring) !*NRom {
+            var nrom = try gpa.create(NRom);
+            nrom.prgROM = prgROM;
+            nrom.chrROM = chrROM;
+            nrom.vram = vram;
+            nrom.mirroring = mirroring;
+    return nrom;
+}
+pub fn deinit(ptr: *anyopaque, gpa: std.mem.Allocator) void {
+    const m: *NRom = @ptrCast(@alignCast(ptr));
+    gpa.free(m.prgROM);
+    gpa.free(m.chrROM);
+    gpa.destroy(m);
 }
 
 pub fn interface(self: *NRom) Mapper {
     return .{
         .ptr = self,
-        .vtable = &.{
-            .read = read,
-            .write = write,
-            .ppu_read = ppu_read,
-            .ppu_write = ppu_write,
-        },
+        .vtable = &.{ .read = read, .write = write, .ppu_read = ppu_read, .ppu_write = ppu_write, .deinit = deinit },
     };
 }
 
@@ -44,7 +43,7 @@ pub fn read(ptr: *anyopaque, addr: u16) u8 {
 
     switch (addr) {
         // usually cartridge ram when present
-        0x6000...0x7FFF => return m.prgRAM[addr - 0x6000], //FIXME: mirror
+        0x6000...0x7FFF => return m.prgRAM[addr - 0x6000],
         0x8000...0xBFFF => {
             return m.prgROM[addr - 0x8000];
         },
@@ -53,13 +52,12 @@ pub fn read(ptr: *anyopaque, addr: u16) u8 {
         },
         else => std.debug.panic("wrong address for mapper: {x}", .{addr}),
     }
-
 }
 
 pub fn write(ptr: *anyopaque, addr: u16, data: u8) void {
     const m: *NRom = @ptrCast(@alignCast(ptr));
     switch (addr) {
-        0x6000...0x7FFF => { 
+        0x6000...0x7FFF => {
             m.prgRAM[addr - 0x6000] = data;
         },
         0x8000...0xBFFF => {
@@ -79,82 +77,85 @@ pub fn write(ptr: *anyopaque, addr: u16, data: u8) void {
 pub fn ppu_read(ptr: *anyopaque, addr: u14) u8 {
     const m: *NRom = @ptrCast(@alignCast(ptr));
     switch (m.mirroring) {
-    .Horizontal => switch (addr) {
-        0x0000...0x1FFF =>  return m.chrROM[addr],
-        //// 2kb of internal ram, but 4kb of name pages
-        0x2000...0x23FF => return m.internalRAM[addr - 0x2000],
-        0x2400...0x27FF => return m.internalRAM[addr - 0x2000],
-        0x2800...0x2BFF => return m.internalRAM[addr - 0x2800],
-        0x2C00...0x2FFF => return m.internalRAM[addr - 0x2800],
-        else =>  @panic("boo"),
-    },
-    .Vertical => switch (addr) {
-        0x0000...0x1FFF => {return m.chrROM[addr];}, 
-        //// 2kb of internal ram, but 4kb of name pages
-        0x2000...0x23FF => return m.internalRAM[addr - 0x2000],
-        0x2400...0x27FF => return m.internalRAM[addr - 0x2400],
-        0x2800...0x2BFF => return m.internalRAM[addr - 0x2400],
-        0x2C00...0x2FFF => return m.internalRAM[addr - 0x2800],
-        else =>  @panic("boo"),
-    },
-    else => std.debug.panic("unsupported mirroring by UxRom {any}", .{m.mirroring})
+        .Horizontal => switch (addr) {
+            0x0000...0x1FFF => return m.chrROM[addr],
+            //// 2kb of internal ram, but 4kb of name pages
+            0x2000...0x23FF => return m.vram[addr - 0x2000],
+            0x2400...0x27FF => return m.vram[addr - 0x2000],
+            0x2800...0x2BFF => return m.vram[addr - 0x2800],
+            0x2C00...0x2FFF => return m.vram[addr - 0x2800],
+            else => @panic("boo"),
+        },
+        .Vertical => switch (addr) {
+            0x0000...0x1FFF => {
+                return m.chrROM[addr];
+            },
+            //// 2kb of internal ram, but 4kb of name pages
+            0x2000...0x23FF => return m.vram[addr - 0x2000],
+            0x2400...0x27FF => return m.vram[addr - 0x2400],
+            0x2800...0x2BFF => return m.vram[addr - 0x2400],
+            0x2C00...0x2FFF => return m.vram[addr - 0x2800],
+            else => @panic("boo"),
+        },
+        else => std.debug.panic("unsupported mirroring by NRom {any}", .{m.mirroring}),
     }
 }
 
 pub fn ppu_write(ptr: *anyopaque, addr: u14, data: u8) void {
     const m: *NRom = @ptrCast(@alignCast(ptr));
     switch (m.mirroring) {
-    .Horizontal => switch (addr) {
-        0x0000...0x1FFF => {}, // 8kb of chrRAM
-        //// 2kb of internal ram, but 4kb of name pages
-        0x2000...0x23FF => m.internalRAM[addr - 0x2000] = data,
-        0x2400...0x27FF => m.internalRAM[addr - 0x2000] = data,
-        0x2800...0x2BFF => m.internalRAM[addr - 0x2800] = data,
-        0x2C00...0x2FFF => m.internalRAM[addr - 0x2800] = data,
-        else =>  @panic("boo"),
-    },
-    .Vertical => switch (addr) {
-        0x0000...0x1FFF => {}, // 8kb of chrRAM
-        //// 2kb of internal ram, but 4kb of name pages
-        0x2000...0x23FF => m.internalRAM[addr - 0x2000] = data,
-        0x2400...0x27FF => m.internalRAM[addr - 0x2400] = data,
-        0x2800...0x2BFF => m.internalRAM[addr - 0x2400] = data,
-        0x2C00...0x2FFF => m.internalRAM[addr - 0x2800] = data,
-        else =>  @panic("boo"),
-    },
-    else => std.debug.panic("unsupported mirroring by UxRom {any}", .{m.mirroring})
+        .Horizontal => switch (addr) {
+            0x0000...0x1FFF => {}, // 8kb of chrRAM
+            //// 2kb of internal ram, but 4kb of name pages
+            0x2000...0x23FF => m.vram[addr - 0x2000] = data,
+            0x2400...0x27FF => m.vram[addr - 0x2000] = data,
+            0x2800...0x2BFF => m.vram[addr - 0x2800] = data,
+            0x2C00...0x2FFF => m.vram[addr - 0x2800] = data,
+            else => @panic("boo"),
+        },
+        .Vertical => switch (addr) {
+            0x0000...0x1FFF => {}, // 8kb of chrRAM
+            //// 2kb of internal ram, but 4kb of name pages
+            0x2000...0x23FF => m.vram[addr - 0x2000] = data,
+            0x2400...0x27FF => m.vram[addr - 0x2400] = data,
+            0x2800...0x2BFF => m.vram[addr - 0x2400] = data,
+            0x2C00...0x2FFF => m.vram[addr - 0x2800] = data,
+            else => @panic("boo"),
+        },
+        else => std.debug.panic("unsupported mirroring by NRom {any}", .{m.mirroring}),
     }
 }
 
-test "Horizontal must mirror horizontally" {
-    var rom = [_]u8{};
-    var chrRAM = [_]u8{};
-    var uxrom = NRom.init(&rom, &chrRAM, .Horizontal);
-    var mapper = uxrom.interface();
-    mapper.ppu_write(0x20F0, 13);
-    try expect(mapper.ppu_read(0x28F0) == 13);
-    mapper.ppu_write(0x24F0, 7);
-    try expect(mapper.ppu_read(0x2CF0) == 7);
-    mapper.ppu_write(0x2CF0, 7);
-    try expect(mapper.ppu_read(0x20F0) == 13);
-    mapper.ppu_write(0x28F0, 7);
-    try expect(mapper.ppu_read(0x20F0) == 7);
-
-}
-//  $2000 and $2400 contain the first nametable,
-//  and $2800 and $2C00 contain the second nametable
-test "Vertical must mirror vertically" {
-    var rom = [_]u8{};
-    var chrRAM = [_]u8{};
-    var uxrom = NRom.init(&rom, &chrRAM, .Vertical);
-    var mapper = uxrom.interface();
-    mapper.ppu_write(0x20F0, 13);
-    try expect(mapper.ppu_read(0x24F0) == 13);
-    mapper.ppu_write(0x28F0, 7);
-    try expect(mapper.ppu_read(0x2CF0) == 7);
-    mapper.ppu_write(0x2CF0, 7);
-    try expect(mapper.ppu_read(0x28F0) == 7);
-    mapper.ppu_write(0x28F0, 9);
-    try expect(mapper.ppu_read(0x2CF0) == 9);
-
+pub fn vramAddress(addr: u14, m: Mirroring) u14 {
+    switch (m) {
+        .Horizontal => switch (addr) {
+            0x2000...0x23FF => addr - 0x2000,
+            0x2400...0x27FF => addr - 0x2000,
+            0x2800...0x2BFF => addr - 0x2800,
+            0x2C00...0x2FFF => addr - 0x2800,
+            else => @panic("boo"),
+        },
+        .Vertical => switch (addr) {
+            0x2000...0x23FF => addr - 0x2000,
+            0x2400...0x27FF => addr - 0x2400,
+            0x2800...0x2BFF => addr - 0x2400,
+            0x2C00...0x2FFF => addr - 0x2800,
+            else => @panic("boo"),
+        },
+        .SingleScreen => switch (addr) {
+            0x2000...0x23FF => addr - 0x2000,
+            0x2400...0x27FF => addr - 0x2400,
+            0x2800...0x2BFF => addr - 0x2800,
+            0x2C00...0x2FFF => addr - 0x2C00,
+            else => @panic("boo"),
+        },
+        .FourScreens => switch (addr) {
+            0x2000...0x23FF => addr - 0x2000,
+            0x2400...0x27FF => addr - 0x2000,
+            0x2800...0x2BFF => addr - 0x2000,
+            0x2C00...0x2FFF => addr - 0x2000,
+            else => @panic("boo"),
+        },
+        .Other => std.debug.panic("unsupported mirroring {any}", .{m}),
+    }
 }

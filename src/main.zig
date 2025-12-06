@@ -8,7 +8,7 @@ const nestle = @import("nestle");
 const Emulator = nestle.Emulator;
 const JoystickState = nestle.core.Controller.JoystickState;
 // const OldMain = @import("oldmain.zig");
-// const stb_image = @import("stb_image.zig"); 
+// const stb_image = @import("stb_image.zig");
 
 const gl = zopengl.bindings;
 
@@ -18,8 +18,8 @@ const gl_version_major: u16 = 4;
 const gl_version_minor: u16 = 5;
 const content_dir = @import("build_options").content_dir;
 
-const NES_WIDTH:usize=256;
-const NES_HEIGHT:usize=224;
+const NES_WIDTH: usize = 256;
+const NES_HEIGHT: usize = 224;
 
 const vertexShaderSource =
     \\#version 300 es
@@ -111,7 +111,7 @@ pub fn compileShader(shader_type: u32, source: []const u8) c_uint {
 }
 
 pub fn init() !void {
-    window = try glfw.Window.create(NES_WIDTH*2, NES_HEIGHT*2, "nestle", null);
+    window = try glfw.Window.create(NES_WIDTH * 2, NES_HEIGHT * 2, "nestle", null);
 
     glfw.makeContextCurrent(window);
     // const monitor = glfw.getWindowMonitor(window);
@@ -140,12 +140,9 @@ pub fn init() !void {
     // defer music.destroy();
     // try music.start();
 
-
     // window.setContentScale(2.0);
-    var imageData: [NES_WIDTH*NES_HEIGHT]u32 = .{0x00000000}**(NES_WIDTH*NES_HEIGHT);
+    var imageData: [NES_WIDTH * NES_HEIGHT]u32 = .{0x00000000} ** (NES_WIDTH * NES_HEIGHT);
 
-
-    
     var emulator: Emulator = undefined;
     try Emulator.init(gpa, &imageData, &emulator);
     defer emulator.deinit(gpa);
@@ -232,11 +229,11 @@ pub fn init() !void {
     gen_triangles(vaos[0], positionAttrLocation, buffers[0]);
     gen_tex_coords(vaos[0], texCoordAttrLocation, buffers[1]);
 
-        // Create a texture.
-    var textures: [1]u32 = .{0}; 
+    // Create a texture.
+    var textures: [1]u32 = .{0};
     gl.createTextures(gl.TEXTURE_2D, 1, &textures);
     // const texture = gl.createTexture();
-     
+
     // Fill the texture with a 1x1 blue pixel.
     // const foo = [_]u8{0, 0, 255, 255};
     // gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
@@ -245,33 +242,30 @@ pub fn init() !void {
     // gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
     //               &foo);
 
-{
-    // for (0..128) |y| {
-    //     for (0..128) |x| {
-    //         const i = x + y * 256;
-    //         imageData[i*4] = 255;
-    //         imageData[i*4+1] = 0;
-    //         imageData[i*4+2] = 0;
-    //         imageData[i*4+3] = 255;
-    //     }
-    // }
-    // now draw an F
-    // for (40..200) |y| {
-    //     for (80..160) |x| {
-    //         imageData[ x*4 + 4*y*256] = 255;
-    //         imageData[ x*4 + 4*y*256+3] = 255;
-    //     }
-    // }
-    gl.bindTexture(gl.TEXTURE_2D, textures[0]);
-    gl.textureParameteri(textures[0], gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.textureParameteri(textures[0], gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 
-                  256, 224, 0, gl.RGBA, gl.UNSIGNED_BYTE, &imageData);
-    gl.generateMipmap(gl.TEXTURE_2D);
+    {
+        // for (0..128) |y| {
+        //     for (0..128) |x| {
+        //         const i = x + y * 256;
+        //         imageData[i*4] = 255;
+        //         imageData[i*4+1] = 0;
+        //         imageData[i*4+2] = 0;
+        //         imageData[i*4+3] = 255;
+        //     }
+        // }
+        // now draw an F
+        // for (40..200) |y| {
+        //     for (80..160) |x| {
+        //         imageData[ x*4 + 4*y*256] = 255;
+        //         imageData[ x*4 + 4*y*256+3] = 255;
+        //     }
+        // }
+        gl.bindTexture(gl.TEXTURE_2D, textures[0]);
+        gl.textureParameteri(textures[0], gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.textureParameteri(textures[0], gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 224, 0, gl.RGBA, gl.UNSIGNED_BYTE, &imageData);
+        gl.generateMipmap(gl.TEXTURE_2D);
     }
-    
 
-     
     // Asynchronously load an image
     // var image = new Image();
     // image.src = "resources/f-texture.png";
@@ -305,25 +299,15 @@ pub fn init() !void {
         // updateAndRender();
         glfw.pollEvents();
         // const jj = try glfw.joystickAsGamepad(joystick).?.getState();
-        
+
         const buttons = try glfw.getJoystickButtons(joystick);
-        const jstate: JoystickState = .{ 
-            .buttonA = buttons[0] == .press, 
-            .buttonB =  buttons[1] == .press,
-            .select = buttons[6] == .press,
-            .start = buttons[7] == .press,
-            .left = buttons[14] == .press,
-            .right = buttons[12] == .press,
-            .up = buttons[11] == .press,
-            .down = buttons[13] == .press
-        };
+        const jstate: JoystickState = .{ .buttonA = buttons[0] == .press, .buttonB = buttons[1] == .press, .select = buttons[6] == .press, .start = buttons[7] == .press, .left = buttons[14] == .press, .right = buttons[12] == .press, .up = buttons[11] == .press, .down = buttons[13] == .press };
         emulator.setJoystickState(jstate);
         // for (buttons, 0..) |b,i| {
         //     if (b == .press) {
         //       std.debug.print("joystick: {d}\n", .{i});
         //     }
         // }
-
 
         // if (window.getKey(.left) == .press and
         //     (gameState.pad_x - pad_half_len - 8.0 > -field_width))
@@ -352,11 +336,10 @@ pub fn init() !void {
         gl.uniform4fv(colorLocation, 1, color[0..]);
         // const ortho = zm.orthographicLhGl(1920.0, 1080.0, 0.0, 1.0);
         // const ortho = zm.orthographicLhGl(256.0, 224.0, 0.0, 1.0);
-        const ortho = zm.orthographicOffCenterLhGl(0.0,2.0 * @as(f32, @floatFromInt(NES_WIDTH)), 0.0,2.0 *  @as(f32, @floatFromInt(NES_HEIGHT)) , 0.0, 1.0);
+        const ortho = zm.orthographicOffCenterLhGl(0.0, 2.0 * @as(f32, @floatFromInt(NES_WIDTH)), 0.0, 2.0 * @as(f32, @floatFromInt(NES_HEIGHT)), 0.0, 1.0);
         gl.uniformMatrix4fv(projection_matrix, 1, 0, zm.arrNPtr(&ortho));
         gl.bindTexture(gl.TEXTURE_2D, textures[0]);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 
-                  256, 224, 0, gl.RGBA, gl.UNSIGNED_BYTE, &imageData);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 224, 0, gl.RGBA, gl.UNSIGNED_BYTE, &imageData);
         gl.generateMipmap(gl.TEXTURE_2D);
 
         // const err = gl.getError();
@@ -369,7 +352,6 @@ pub fn init() !void {
         // const _offset = 0;
         // const count = 6;
         gl.drawArrays(gl.TRIANGLES, 0, 6);
-
 
         // const fb_size = window.getFramebufferSize();
         // std.debug.print("fb size: {d}, {d}\n", .{fb_size[0], fb_size[1]});
@@ -462,14 +444,12 @@ pub fn gen_tex_coords(vao: u32, texAttrLocation: i32, texBuffer: u32) void {
         1, 1,
         0, 1,
         0, 0,
-
-
     };
 
     // const num_points: i32 = 6;
 
     // 4 * @as(isize , @intCast(data_idx))
-    gl.bufferData(gl.ARRAY_BUFFER, @sizeOf(f32)*data.len, &data, gl.STATIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, @sizeOf(f32) * data.len, &data, gl.STATIC_DRAW);
 
     const size = 2; // 2 components per iteration
     const @"type" = gl.FLOAT; // the data is 32bit floats
@@ -482,4 +462,3 @@ pub fn deinit() void {
     window.destroy();
     glfw.terminate();
 }
-
