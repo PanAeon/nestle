@@ -219,7 +219,7 @@ pub const opcodes = init: {
     xs[0xE8] = .{ .instr = .INX, .bytes = 1, .mode = .Implied, .cycles = 2 };
     xs[0xC8] = .{ .instr = .INY, .bytes = 1, .mode = .Implied, .cycles = 2 };
 
-    xs[0x4C] = .{ .instr = .JMP, .bytes = 3, .mode = .Absolute, .cycles = 3 };
+    xs[0x4C] = .{ .instr = .JMP, .bytes = 3, .mode = .Absolute, .cycles = 7 };
     xs[0x6C] = .{ .instr = .JMP, .bytes = 3, .mode = .Indirect, .cycles = 5 };
 
     xs[0x20] = .{ .instr = .JSR, .bytes = 3, .mode = .Absolute, .cycles = 6 };
@@ -379,7 +379,7 @@ pub fn fetch(self: *Cpu, instr: DecodedInstruction) u8 {
             if (@as(u16, self.Y) + @as(u16, instr.arg0) > 0xFF) {
                 self.pageCrossed = 1;
             }
-            break :brk self.memory.read(@as(u16, self.Y) + @as(u16, instr.arg0) + (@as(u16, instr.arg1) << 8));
+            break :brk self.memory.read(@as(u16, self.Y) +% @as(u16, instr.arg0) +% (@as(u16, instr.arg1) << 8));
         },
         .IndirectX => brk: {
             // val = PEEK(PEEK((arg + X) % 256) + PEEK((arg + X + 1) % 256) * 256)
@@ -394,7 +394,7 @@ pub fn fetch(self: *Cpu, instr: DecodedInstruction) u8 {
             if (@as(u16, a1) + @as(u16, a2) > 0xFF) {
                 self.pageCrossed = 1;
             }
-            break :brk self.memory.read(@as(u16, a1) + (@as(u16, a2) << 8) + @as(u16, self.Y));
+            break :brk self.memory.read(@as(u16, a1) +% (@as(u16, a2) << 8) +% @as(u16, self.Y));
         },
         .Accumulator => self.A,
         .Relative => instr.arg0,
@@ -863,7 +863,11 @@ pub fn interpret(self: *Cpu, instr: DecodedInstruction) u8 {
             const low = self.memory.read(@as(u16, self.SP) + 0x0100);
             self.SP +%= 1;
             const high = self.memory.read(@as(u16, self.SP) + 0x0100);
-            self.P = @bitCast(f); // FIXME: two pesky flags
+            const prevB = self.P.B;
+            const prev0 = self.P.@"-";
+            self.P = @bitCast(f);
+            self.P.B = prevB;
+            self.P.@"-" = prev0;
             self.PC = @as(u16, low) + (@as(u16, high) << 8);
         },
         .RTS => {
