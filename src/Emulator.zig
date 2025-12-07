@@ -8,6 +8,7 @@ const UxRom = @import("mapper/UxRom.zig");
 const NRom = @import("mapper/NRom.zig");
 const Mapper = @import("mapper/Mapper.zig");
 const ines = @import("loader/ines.zig");
+const zaudio = @import("zaudio");
 // FIXME: what happens when I copy emulator?
 const Emulator = @This();
 
@@ -18,12 +19,18 @@ ppu: Ppu,
 controller: Controller,
 memoryController: MemoryController,
 cpu: Cpu,
-pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
+pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator, engine: *zaudio.Engine) !void {
+    var f = try std.fs.openFileAbsolute("/foo/snes/Mega Man (USA).nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/Metal Gear (USA).nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/All Night Nippon Super Mario Bros. (J) (FDS Conversion).nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/Super Mario Bros. (World).nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/BattleCity (Japan).nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/nestest.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/sprite.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/DuckTales (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/controller.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Castlevania.USA.nes", .{});
-    var f = try std.fs.openFileAbsolute("/foo/snes/Commando (USA).nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/Commando (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Total.Recall.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/testroms/palette_fill.nes", .{});
     defer f.close();
@@ -40,7 +47,7 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
     const romInfo = try ines.readRom(gpa, &f, &emu.vram);
     emu.mapper = romInfo.mapper;
 
-    emu.apu = Apu.init();
+    emu.apu = Apu.init(engine);
     emu.ppu = Ppu.init(emu.mapper, outputBuffer);
     emu.controller = Controller.init();
     emu.memoryController = MemoryController{ .mapper = emu.mapper, .apu = &emu.apu, .ppu = &emu.ppu, .controller = &emu.controller };
@@ -50,6 +57,9 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
     const low: u16 = emu.memoryController.read(0xFFFC);
     const high: u16 = emu.memoryController.read(0xFFFD);
     emu.cpu.PC = low + (high * 256);
+    emu.cpu.SP = 0xFD;
+    emu.cpu.P.InterrupDisable = 1; // ???
+    // std.debug.print("current bank: {d}", emu.mapper
 
     // return emu;
 
@@ -73,6 +83,64 @@ pub fn deinit(self: *Emulator, gpa: std.mem.Allocator) void {
 pub fn setJoystickState(self: *Emulator, state: Controller.JoystickState) void {
     self.controller.joystick1 = state;
     // self.controller.joystick2 = state;
+}
+pub fn run_cpu_test(self: *Emulator) !void {
+    var f = try std.fs.openFileAbsolute("/foo/snes/nestest.log", .{});
+    defer f.close();
+    var linebuffer = [_]u8{0} ** 1024;
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    var reader_state = f.reader(threaded.io(), &linebuffer);
+    var reader = &reader_state.interface;
+
+    self.cpu.PC = 0xC000;
+    self.cpu.P.InterrupDisable = 1;
+    var cycles: u64 = 0;
+    // while (cycles < 30000) {
+    // }
+
+    var i: u64 = 1;
+    while (true) {
+        const line = reader.takeDelimiterExclusive('\n') catch &.{};
+        if (line.len == 0 or i == 5004) {
+            break;
+        }
+        const ref_addr = try std.fmt.parseInt(u16, line[0..4], 16);
+        if (ref_addr != self.cpu.PC) {
+            std.debug.panic("oops on line: {d}\n ref: 0x{x}, our: 0x{x}", .{ i, ref_addr, self.cpu.PC });
+        }
+        const ref_a = try std.fmt.parseInt(u16, line[50..52], 16);
+        if (ref_a != self.cpu.A) {
+            std.debug.panic("oops on line: {d}\n ref: 0x{x}, our: 0x{x}", .{ i, ref_a, self.cpu.A });
+        }
+        const ref_sp = try std.fmt.parseInt(u16, line[71..73], 16);
+        if (ref_sp != self.cpu.SP) {
+            std.debug.panic("oops on line: {d}\n ref: 0x{x}, our: 0x{x}", .{ i, ref_sp, self.cpu.SP });
+        }
+        const ref_x = try std.fmt.parseInt(u16, line[55..57], 16);
+        if (ref_x != self.cpu.X) {
+            std.debug.panic("oops on line: {d}\n ref: 0x{x}, our: 0x{x}", .{ i, ref_x, self.cpu.X });
+        }
+        const ref_y = try std.fmt.parseInt(u16, line[60..62], 16);
+        if (ref_y != self.cpu.Y) {
+            std.debug.panic("oops on line: {d}\n ref: 0x{x}, our: 0x{x}", .{ i, ref_y, self.cpu.Y });
+        }
+        const ref_flags = try std.fmt.parseInt(u8, line[65..67], 16);
+        if (ref_flags != @as(u8, @bitCast(self.cpu.P))) {
+            const ref: Cpu.Flags = @bitCast(ref_flags);
+            std.debug.panic("oops on line: {d}\n ref: 0x{any},\n our: 0x{any}\n", .{ i, ref, self.cpu.P });
+        }
+        const instr = self.cpu.decode2(self.cpu.PC);
+        cycles += self.cpu.interpret(instr);
+        //  const ref_cycles = try std.fmt.parseInt(u64, line[90..line.len-1],  10);
+        // if (ref_cycles !=  cycles) {
+        //     std.debug.panic("oops on line: {d}\n ref cycles: {d},\n our: {d}\n", .{i, ref_cycles, cycles});
+        // }
+
+        // std.debug.print("line: {s}\n", .{line});
+        try reader.discardAll(1);
+        i += 1;
+    }
+    std.debug.print("done, num cycles on 5004: {d}\n", .{cycles});
 }
 
 pub fn run_one_frame(self: *Emulator) void {

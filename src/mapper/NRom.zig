@@ -10,11 +10,11 @@ mirroring: Mirroring,
 prgRAM: [2048]u8, // or 4k in Family Basic only
 
 pub fn init(gpa: std.mem.Allocator, prgROM: []u8, chrROM: []u8, vram: []u8, mirroring: Mirroring) !*NRom {
-            var nrom = try gpa.create(NRom);
-            nrom.prgROM = prgROM;
-            nrom.chrROM = chrROM;
-            nrom.vram = vram;
-            nrom.mirroring = mirroring;
+    var nrom = try gpa.create(NRom);
+    nrom.prgROM = prgROM;
+    nrom.chrROM = chrROM;
+    nrom.vram = vram;
+    nrom.mirroring = mirroring;
     return nrom;
 }
 pub fn deinit(ptr: *anyopaque, gpa: std.mem.Allocator) void {

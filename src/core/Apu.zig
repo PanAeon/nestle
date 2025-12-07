@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const Apu = @This();
+const zaudio = @import("zaudio");
 
 const PulseChannel = packed struct {
     volume: u4 = 0, // envelope period
@@ -73,8 +74,10 @@ dmcChannel: DMCChannel = std.mem.zeroes(DMCChannel),
 control: Control = std.mem.zeroes(Control),
 status: Status = std.mem.zeroes(Status),
 frameCounter: FrameCounter = .{},
-pub fn init() Apu {
-    return .{};
+engine: *zaudio.Engine,
+
+pub fn init(engine: *zaudio.Engine) Apu {
+    return .{.engine = engine};
 }
 
 pub fn read(self: *Apu, addr: u16) u8 {

@@ -12,12 +12,13 @@ mirroring: Mirroring,
 // chrRAM: 8kb?, mirror: vertical
 
 pub fn init(gpa: std.mem.Allocator, prgROM: []u8, chrROM: []u8, chrRAM: []u8, vram: []u8, mirroring: Mirroring) !*UxRom {
-            var uxRom = try gpa.create(Mapper.UxRom);
-            uxRom.prgROM = prgROM;
-            uxRom.chrROM = chrROM;
-            uxRom.chrRAM = chrRAM;
-            uxRom.vram = vram;
-            uxRom.mirroring = mirroring;
+    var uxRom = try gpa.create(Mapper.UxRom);
+    uxRom.prgROM = prgROM;
+    uxRom.chrROM = chrROM;
+    uxRom.chrRAM = chrRAM;
+    uxRom.vram = vram;
+    uxRom.mirroring = mirroring;
+    uxRom.currentBank = 0;
     return uxRom;
 }
 
@@ -98,9 +99,11 @@ pub fn write(ptr: *anyopaque, addr: u16, data: u8) void {
             //           (UNROM uses bits 2-0; UOROM uses bits 3-0)
             //           will use bits 2-0 for now..
             // m.prgROM[m.currentBank * 0x4000 + @as(u32, addr) - 0x8000] = data;
-            m.currentBank = data & 0b0000111; //@as(u3, @truncate(data));
+            m.currentBank = data & 0b00000111; //@as(u3, @truncate(data));
         },
-        else => std.debug.panic("wrong address for mapper: {x}", .{addr}),
+        else => {
+            m.currentBank = data & 0b00000111; // at least mgs does this..
+        }, // std.debug.panic("wrong address for mapper: 0x{x}", .{addr}),
     }
 }
 

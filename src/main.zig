@@ -19,7 +19,7 @@ const gl_version_minor: u16 = 5;
 const content_dir = @import("build_options").content_dir;
 
 const NES_WIDTH: usize = 256;
-const NES_HEIGHT: usize = 224;
+const NES_HEIGHT: usize = 240; //224...
 
 const vertexShaderSource =
     \\#version 300 es
@@ -144,8 +144,11 @@ pub fn init() !void {
     var imageData: [NES_WIDTH * NES_HEIGHT]u32 = .{0x00000000} ** (NES_WIDTH * NES_HEIGHT);
 
     var emulator: Emulator = undefined;
-    try Emulator.init(gpa, &imageData, &emulator);
+    try Emulator.init(gpa, &imageData, &emulator, engine);
     defer emulator.deinit(gpa);
+
+    // try emulator.run_cpu_test();
+    // if (true) return;
 
     const scale_factor = scale_factor: {
         const scale = window.getContentScale();
@@ -184,7 +187,7 @@ pub fn init() !void {
     }
 
     gl.useProgram(program);
-    // gl.viewport(0, 0, NES_, 224);
+    // gl.viewport(0, 0, NES_WIDTH*2, NES_HEIGHT*2);
 
     const positionAttrLocation = gl.getAttribLocation(program, "a_position");
     const texCoordAttrLocation = gl.getAttribLocation(program, "a_texcoord");
@@ -262,7 +265,7 @@ pub fn init() !void {
         gl.bindTexture(gl.TEXTURE_2D, textures[0]);
         gl.textureParameteri(textures[0], gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.textureParameteri(textures[0], gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 224, 0, gl.RGBA, gl.UNSIGNED_BYTE, &imageData);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, NES_WIDTH, NES_HEIGHT, 0, gl.RGBA, gl.UNSIGNED_BYTE, &imageData);
         gl.generateMipmap(gl.TEXTURE_2D);
     }
 
@@ -335,11 +338,10 @@ pub fn init() !void {
 
         gl.uniform4fv(colorLocation, 1, color[0..]);
         // const ortho = zm.orthographicLhGl(1920.0, 1080.0, 0.0, 1.0);
-        // const ortho = zm.orthographicLhGl(256.0, 224.0, 0.0, 1.0);
         const ortho = zm.orthographicOffCenterLhGl(0.0, 2.0 * @as(f32, @floatFromInt(NES_WIDTH)), 0.0, 2.0 * @as(f32, @floatFromInt(NES_HEIGHT)), 0.0, 1.0);
         gl.uniformMatrix4fv(projection_matrix, 1, 0, zm.arrNPtr(&ortho));
         gl.bindTexture(gl.TEXTURE_2D, textures[0]);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 224, 0, gl.RGBA, gl.UNSIGNED_BYTE, &imageData);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, NES_WIDTH, NES_HEIGHT, 0, gl.RGBA, gl.UNSIGNED_BYTE, &imageData);
         gl.generateMipmap(gl.TEXTURE_2D);
 
         // const err = gl.getError();

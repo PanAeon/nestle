@@ -219,7 +219,7 @@ pub const opcodes = init: {
     xs[0xE8] = .{ .instr = .INX, .bytes = 1, .mode = .Implied, .cycles = 2 };
     xs[0xC8] = .{ .instr = .INY, .bytes = 1, .mode = .Implied, .cycles = 2 };
 
-    xs[0x4C] = .{ .instr = .JMP, .bytes = 3, .mode = .Absolute, .cycles = 7 };
+    xs[0x4C] = .{ .instr = .JMP, .bytes = 3, .mode = .Absolute, .cycles = 3 };
     xs[0x6C] = .{ .instr = .JMP, .bytes = 3, .mode = .Indirect, .cycles = 5 };
 
     xs[0x20] = .{ .instr = .JSR, .bytes = 3, .mode = .Absolute, .cycles = 6 };

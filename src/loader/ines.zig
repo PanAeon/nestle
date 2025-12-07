@@ -12,7 +12,7 @@ pub const Flags6 = packed struct {
 };
 pub const Flags7 = packed struct {
     vsUnisystem: bool,
-    playchoice: bool,// PlayChoice-10 (8 KB of Hint Screen data stored after CHR data)
+    playchoice: bool, // PlayChoice-10 (8 KB of Hint Screen data stored after CHR data)
     nes2_0: u2, // if equal to 2, flags 8-15 are in NES 2.0 format
     upperNybleOfMapper: u4,
 };
@@ -20,7 +20,7 @@ pub const Header = packed struct {
     prgRomSize: u8, //  in 16 KB units
     chrRomSize: u8, //  in 8 KB units, (value 0 means the board uses CHR RAM)
     flags6: Flags6,
-    flags7: u8,
+    flags7: Flags7,
     flags8: u8,
     flags9: u8,
     flags10: u8,
@@ -62,7 +62,7 @@ pub fn readRom(gpa: std.mem.Allocator, f: *File, vram: []u8) !RomInfo {
     if (nRead != @as(usize, header.prgRomSize) * 16 * 1024) {
         return error.FileTooShort;
     }
-    // std.debug.print("header: {any}\n", .{header});
+    std.debug.print("header: {any}\n", .{header});
     // const numBanks = header.prgRomSize;
     // const firstBankData = prgROM[0..0x4000];
     // _ = &firstBankData;
@@ -71,11 +71,13 @@ pub fn readRom(gpa: std.mem.Allocator, f: *File, vram: []u8) !RomInfo {
     if (header.chrRomSize > 0) {
         chrROM = try gpa.alloc(u8, @as(usize, header.chrRomSize) * 8 * 1024);
         _ = &nRead;
-         nRead = try f.read(chrROM);
+        nRead = try f.read(chrROM);
         // if (nRead != @as(usize, header.chrRomSize) * 8 * 1024) {
         //     return error.FileTooShort;
         // }
     }
+    const mapper: u8 = header.flags6.lowerNybbleOfMapper +
+        (@as(u8, header.flags7.upperNybleOfMapper) << 4);
     // mapped into $8000-$BFFF
     //
     // const lastBankData = prgROM[7 * 0x4000 .. 8 * 0x4000]; //16kb we need;
@@ -93,11 +95,11 @@ pub fn readRom(gpa: std.mem.Allocator, f: *File, vram: []u8) !RomInfo {
     // // std.fmt.hexToBytes(u, input: []const u8)
     //        CPU $8000-$BFFF: 16 KB switchable PRG ROM bank
     //   CPU $C000-$FFFF: 16 KB PRG ROM bank, fixed to the last bank
-    const mirroring = if (header.flags6.nametableArragement == 0) 
-         Mapper.Mirroring.Vertical
-        else 
-         Mapper.Mirroring.Horizontal;
-    switch (header.flags6.lowerNybbleOfMapper) {
+    const mirroring = if (header.flags6.nametableArragement == 0)
+        Mapper.Mirroring.Vertical
+    else
+        Mapper.Mirroring.Horizontal;
+    switch (mapper) {
         0 => {
             var nrom = try Mapper.NRom.init(gpa, prgROM, chrROM, vram, mirroring);
             return .{ .mapper = nrom.interface() };
