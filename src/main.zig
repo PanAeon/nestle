@@ -130,8 +130,8 @@ pub fn init() !void {
     zaudio.init(gpa);
     defer zaudio.deinit();
 
-    const engine = try zaudio.Engine.create(null);
-    defer engine.destroy();
+    // const engine = try zaudio.Engine.create(null);
+    // defer engine.destroy();
 
     // const music = try engine.createSoundFromFile(
     //     content_dir ++ "serbia_strong.mp3",
@@ -144,7 +144,7 @@ pub fn init() !void {
     var imageData: [NES_WIDTH * NES_HEIGHT]u32 = .{0x00000000} ** (NES_WIDTH * NES_HEIGHT);
 
     var emulator: Emulator = undefined;
-    try Emulator.init(gpa, &imageData, &emulator, engine);
+    try Emulator.init(gpa, &imageData, &emulator);
     defer emulator.deinit(gpa);
 
     // try emulator.run_cpu_test();

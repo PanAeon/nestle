@@ -228,6 +228,7 @@ pub fn oamdma(self: *Ppu, data: u8) void {
         self.memoryController.write(0x2004, foo);
         addr += 1;
     }
+    self.cpu.dmaDone = true;
     // takes 513/514 cycles..
 }
 // run single instruction ...
@@ -243,6 +244,8 @@ const SystemPalette = [64]u32{
     (0xFFECEEEC), (0xFFD48820), (0xFFEC6A64), (0xFFEC58B4), (0xFFE454EC), (0xFFB062EC), (0xFF787CEC), (0xFF4C9AEC), (0xFF38B4CC), (0xFF74C400), (0xFF4CD020), (0xFF38CC6C), (0xFFA0AA00), (0xFF3C3C3C), (0xFF000000), (0xFF000000),
     (0xFFECEEEC), (0xFFE4C490), (0xFFECB4B0), (0xFFECAED4), (0xFFECAEEC), (0xFFD4B2EC), (0xFFBCBCEC), (0xFFA8CCEC), (0xFFA0D6E4), (0xFFB4DE78), (0xFFA8E290), (0xFF98E2B4), (0xFFCCD278), (0xFFA0A2A0), (0xFF000000), (0xFF000000),
 };
+// const pal = @embedFile("2C02G_wiki.pal");
+// const SystemPalette: []const u24 = @alignCast(@ptrCast(pal));
 
 // Backgrounds and sprites each have 4 palettes of 4 colors, located at $3F00-$3F1F in VRAM
 // draw entire frame for simplicity
@@ -251,7 +254,7 @@ pub fn nameTableAddress(self: *Ppu, row: u16, col: u16) u16 {
     const scrllx = (self.ppuScroll[0]); // 0..255
     const tileYOffset = scrlly / 8;
     const tileXOffset = scrllx / 8;
-    var nametableAddress: u16 = switch (self.ppuCtrl.baseNametableAddress) {
+    var nametableAddr: u16 = switch (self.ppuCtrl.baseNametableAddress) {
         0 => 0x2000,
         1 => 0x2400,
         2 => 0x2800,
@@ -259,60 +262,53 @@ pub fn nameTableAddress(self: *Ppu, row: u16, col: u16) u16 {
     };
     var newOffset = (row + tileYOffset) % (30 * 2); // i hope
     if (newOffset > 30) {
-        nametableAddress = if (nametableAddress == 0x2000) 0x2800 else 0x2000;
+        nametableAddr = if (nametableAddr == 0x2000) 0x2800 else 0x2000;
         newOffset = newOffset - 30;
     }
     var newXOffset = (col + tileXOffset) % (32 * 2); // i hope
     if (newXOffset > 32) {
-        nametableAddress = if (nametableAddress == 0x2000) 0x2400 else 0x2000;
+        nametableAddr = if (nametableAddr == 0x2000) 0x2400 else 0x2000;
         newXOffset = newXOffset - 32;
     }
-    const address = nametableAddress + newOffset * 32 + newXOffset; //tileIdx
-    return address ;
+    const address = nametableAddr + newOffset * 32 + newXOffset; //tileIdx
+    return address;
 }
 
-pub fn attrTableAttr(self: *Ppu, row: u16, col: u16) u8 {
+pub fn getAttrValue2(self: *Ppu, row: usize, col: usize) u2 {
     const scrlly = (self.ppuScroll[1]); // 0..255
     const scrllx = (self.ppuScroll[0]); // 0..255
     const tileYOffset = scrlly / 8;
     const tileXOffset = scrllx / 8;
-    var attrTableAddress: u16 = switch (self.ppuCtrl.baseNametableAddress) {
-        0 => 0x23C0,
-        1 => 0x27C0,
-        2 => 0x2BC0,
-        3 => 0x2FC0,
+    var nametableAddr: u16 = switch (self.ppuCtrl.baseNametableAddress) {
+        0 => 0x2000,
+        1 => 0x2400,
+        2 => 0x2800,
+        3 => 0x2C00,
     };
+    _ = &nametableAddr;
     var newOffset = (row + tileYOffset) % (30 * 2); // i hope
     if (newOffset > 30) {
-        attrTableAddress = if (attrTableAddress == 0x23C0) 0x2BC0 else 0x23C0;
+        nametableAddr = if (nametableAddr == 0x2000) 0x2800 else 0x2000;
         newOffset = newOffset - 30;
     }
     var newXOffset = (col + tileXOffset) % (32 * 2); // i hope
     if (newXOffset > 32) {
-        attrTableAddress = if (attrTableAddress == 0x23C0) 0x27C0 else 0x23C0;
+        nametableAddr = if (nametableAddr == 0x2000) 0x2400 else 0x2000;
         newXOffset = newXOffset - 32;
     }
-
-    const address = attrTableAddress + (8 * newOffset / 4) + (newXOffset / 4); //tileIdx
-    return self.ppu_read(address);
-}
-
-// TODO: scrolling
-pub fn getAttrValue(self: *Ppu, row: usize, col: usize) u2 {
-    // const attrTableAddress: u16 = switch (self.ppuCtrl.baseNametableAddress) {
-    //     0 => 0x23C0,
-    //     1 => 0x27C0,
-    //     2 => 0x2BC0,
-    //     3 => 0x2FC0,
-    // };
-    // 8x8 byte array, each byte controlls 32x32 pixels, col controls 8px..
-    // const b = self.ppu_read(attrTableAddress + @as(u16, @intCast((col/4) + 8*(row/4))));
-    const b = self.attrTableAttr(@truncate(row), @truncate(col));
-    const dy:u1 = @intCast((row%4) / 2);
-    const dx:u1 = @intCast((col%4) / 2);
-    // now we need select 2 bits, 
+    const attrTableAddress = nametableAddr + 0x03C0;
+    // const address = nametableAddr + newOffset * 32 + newXOffset; //tileIdx
+    // return  address;
+    const address = attrTableAddress + (8 * (newOffset / 4)) + (newXOffset / 4); //tileIdx
+    // if (col == 11 and row == 7) {
+    //     std.debug.print(">> attr addr: 0x{x}\n", .{address});
+    // }
+    const b = self.ppu_read(@truncate(address));
+    const dy: u1 = @intCast((row % 4) / 2);
+    const dx: u1 = @intCast((col % 4) / 2);
+    // now we need select 2 bits,
     // value = (bottomright << 6) | (bottomleft << 4) | (topright << 2) | (topleft << 0)
-    const bitAddr:u3 = 2*(@as(u3,dy)*2+dx);
+    const bitAddr: u3 = 2 * (@as(u3, dy) * 2 + dx);
     const res: u2 = @truncate((b >> bitAddr) & 0x3);
     return res;
 }
@@ -324,12 +320,7 @@ pub fn getAttrValue(self: *Ppu, row: usize, col: usize) u2 {
 // |||++- Pixel value from tile pattern data
 // |++--- Palette number from attributes
 // +----- Background/Sprite select
-const PaletteIdx = packed struct(u5) {
-    tilePatternData: u2,
-    paletteNumFromAttr: u2,
-    isSprite: bool
-};
-
+const PaletteIdx = packed struct(u5) { tilePatternData: u2, paletteNumFromAttr: u2, isSprite: bool };
 
 pub fn drawFrame(self: *Ppu) void {
     for (self.outputBuffer) |*b| {
@@ -372,14 +363,18 @@ pub fn drawFrame(self: *Ppu) void {
         for (0..32) |col| {
             // const scrlly = (self.ppuScroll[1]%8); // 0..255
             // const entry = self.ppu_read(@as(u16, @truncate(nametableAddress + (row) * 32 + col))); //tileIdx
-            const entry = self.ppu_read(self.nameTableAddress(@intCast(row), @intCast(col))); //tileIdx
+            const tileIdx = self.nameTableAddress(@intCast(row), @intCast(col));
+            const entry = self.ppu_read(tileIdx); //tileIdx
+            // if (col == 11 and row == 7) {
+            //     std.debug.print(">> 0x{x}\n", .{entry});
+            // }
             // const ab = self.attrTableAttr(@intCast(row), @intCast(col));
             // // const ab = attrTable[(row/4)*8+col/4];
             // const _r = row % 2;
             // const _c = col % 2;
             // const attrValue: u2 = @truncate(if (_r == 0) (if (_c == 0) (ab & 0x00000011) else (ab & 0b0000_1100 >> 2)) else (if (_c == 0) (ab & 0b0011_0000 >> 4) else (ab & 0b1100_0000 >> 6)));
             // _ = &attrValue;
-            const attrValue = self.getAttrValue(row, col);
+            const attrValue = self.getAttrValue2(row, col);
 
             const offset = @as(u16, 16) * entry + bgPatternTableAddr;
             var pixels: [16]u8 = .{0} ** 16;
@@ -407,12 +402,12 @@ pub fn drawFrame(self: *Ppu) void {
                     // const _palette: [4]u8 = .{2,2,2,5};
                     // _ = &palette;
                     if (res != 0) {
-                        const paletteIdx: PaletteIdx = .{ 
+                        const paletteIdx: PaletteIdx = .{
                             .tilePatternData = res,
                             .paletteNumFromAttr = attrValue,
                             .isSprite = false,
                         };
-                        const colorIdx: u6 = @truncate(self.ppu_read(@as(u16, 0x3F00) + @as(u5,@bitCast(paletteIdx))));
+                        const colorIdx: u6 = @truncate(self.ppu_read(@as(u16, 0x3F00) + @as(u5, @bitCast(paletteIdx))));
                         // const colorIdx: u6 = @truncate(palette[res]);
                         // const colorIdx = palette[res];
                         // const colorIdx: u6 = @intCast(col+res);
@@ -443,8 +438,22 @@ pub fn drawFrame(self: *Ppu) void {
         }
     }
     self.drawSprites();
+    // self.drawBackgroundPalette();
     // self.drawPalette();
 }
+pub fn drawBackgroundPalette(self: *Ppu) void {
+    for (0..16) |i| {
+        const colorIdx: u6 = @truncate(self.ppu_read(@as(u16, 0x3F00) + @as(u16, @intCast(i))));
+        const color = SystemPalette[colorIdx];
+        for (0..16) |y| {
+            for (0..16) |x| {
+                const pos = i * 16 + x + y * 256 + 224 * 256;
+                self.outputBuffer[pos] = color; //rgba
+            }
+        }
+    }
+}
+
 pub fn drawPalette(self: *Ppu) void {
     for (0..4) |row| {
         for (0..16) |col| {

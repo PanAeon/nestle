@@ -16,9 +16,10 @@ irqFlag: u1,
 nmiFlag: u1,
 
 memory: *MemoryController,
+dmaDone: bool,
 
 pub fn init(memory: *MemoryController) Cpu {
-    return .{ .A = 0, .X = 0, .Y = 0, .PC = 0, .S = 0, .P = Flags.empty(), .SP = 0xFF, .pageCrossed = 0x00, .irqFlag = 0, .nmiFlag = 0, .memory = memory };
+    return .{ .A = 0, .X = 0, .Y = 0, .PC = 0, .S = 0, .P = Flags.empty(), .SP = 0xFF, .pageCrossed = 0x00, .irqFlag = 0, .nmiFlag = 0, .memory = memory, .dmaDone = false };
 }
 pub fn print(self: *Cpu) void {
     std.debug.print(

@@ -19,7 +19,7 @@ ppu: Ppu,
 controller: Controller,
 memoryController: MemoryController,
 cpu: Cpu,
-pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator, engine: *zaudio.Engine) !void {
+pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
     var f = try std.fs.openFileAbsolute("/foo/snes/Mega Man (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Metal Gear (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/All Night Nippon Super Mario Bros. (J) (FDS Conversion).nes", .{});
@@ -47,7 +47,7 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator, engine:
     const romInfo = try ines.readRom(gpa, &f, &emu.vram);
     emu.mapper = romInfo.mapper;
 
-    emu.apu = Apu.init(engine);
+    emu.apu = try Apu.init(gpa);
     emu.ppu = Ppu.init(emu.mapper, outputBuffer);
     emu.controller = Controller.init();
     emu.memoryController = MemoryController{ .mapper = emu.mapper, .apu = &emu.apu, .ppu = &emu.ppu, .controller = &emu.controller };
@@ -77,6 +77,7 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator, engine:
 }
 
 pub fn deinit(self: *Emulator, gpa: std.mem.Allocator) void {
+    self.apu.deinit(gpa);
     self.mapper.deinit(gpa);
 }
 
