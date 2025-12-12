@@ -99,20 +99,24 @@ pub fn readRom(gpa: std.mem.Allocator, f: *File, vram: []u8) !RomInfo {
         Mapper.Mirroring.Vertical
     else
         Mapper.Mirroring.Horizontal;
+    const chrRAM: []u8 = if (header.chrRomSize == 0)
+        try gpa.alloc(u8, 0x2000) // 8kb
+    else
+        &.{};
+    for (chrRAM) |*b| {
+        b.* = 0;
+    }
     switch (mapper) {
         0 => {
-            var nrom = try Mapper.NRom.init(gpa, prgROM, chrROM, vram, mirroring);
+            var nrom = try Mapper.NRom.create(gpa, prgROM, chrROM, vram, mirroring);
             return .{ .mapper = nrom.interface() };
         },
+        1 => {
+            var mmc1 = try Mapper.MMC1.create(gpa, prgROM, chrROM, chrRAM, vram, mirroring);
+            return .{ .mapper = mmc1.interface() };
+        },
         2 => {
-            const chrRAM: []u8 = if (header.chrRomSize == 0)
-                try gpa.alloc(u8, 0x2000) // 8kb
-            else
-                &.{};
-            for (chrRAM) |*b| {
-                b.* = 0;
-            }
-            var uxRom = try Mapper.UxRom.init(gpa, prgROM, chrROM, chrRAM, vram, mirroring);
+            var uxRom = try Mapper.UxRom.create(gpa, prgROM, chrROM, chrRAM, vram, mirroring);
             return .{ .mapper = uxRom.interface() };
         },
         else => std.debug.panic("Unknown mapper {d}", .{header.flags6.lowerNybbleOfMapper}),

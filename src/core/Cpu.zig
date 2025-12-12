@@ -92,6 +92,26 @@ pub const InstructionName = enum {
     TXA,
     TXS,
     TYA,
+    // illegal opcodes:
+    SLO,
+    RLA,
+    SRE,
+    RRA,
+    SAX,
+    LAX,
+    DCP,
+    ISC,
+    ANC,
+    ALR,
+    ARR,
+    XAA,
+    AXS,
+    AHX,
+    SHY,
+    SHX,
+    TAS,
+    LAS
+
 };
 
 pub const AddressingMode = enum { ZeroPageX, ZeroPageY, AbsoluteX, AbsoluteY, IndirectX, IndirectY, Implied, Accumulator, Immediate, ZeroPage, Absolute, Relative, Indirect };
@@ -112,14 +132,14 @@ pub const DecodedInstruction = struct {
 pub const Flags = packed struct {
     Carry: u1,
     Zero: u1,
-    InterrupDisable: u1,
+    InterrupDisable: bool,
     Decimal: u1,
     B: u1,
     @"-": u1,
     Overflow: u1,
     Negative: u1,
     pub fn empty() Flags {
-        return .{ .Carry = 0, .Zero = 0, .InterrupDisable = 0, .Decimal = 0, .B = 0, .@"-" = 1, .Overflow = 0, .Negative = 0 };
+        return .{ .Carry = 0, .Zero = 0, .InterrupDisable = false, .Decimal = 0, .B = 0, .@"-" = 1, .Overflow = 0, .Negative = 0 };
     }
 };
 
@@ -319,6 +339,8 @@ pub const opcodes = init: {
     xs[0x9A] = .{ .instr = .TXS, .bytes = 1, .mode = .Implied, .cycles = 2 };
     xs[0x98] = .{ .instr = .TYA, .bytes = 1, .mode = .Implied, .cycles = 2 };
 
+    // illegal opcodes:
+    // xs[0x07] = .{ .instr = .SLO, .bytes = 2, .mode = .ZeroPage, .cycles = 3 };
     break :init xs;
 };
 
@@ -670,7 +692,7 @@ pub fn interpret(self: *Cpu, instr: DecodedInstruction) u8 {
         },
         .CLI => {
             // The effect of changing this flag is delayed one instruction
-            self.P.InterrupDisable = 0;
+            self.P.InterrupDisable = false;
         },
         .CLV => {
             self.P.Overflow = 0;
@@ -899,7 +921,7 @@ pub fn interpret(self: *Cpu, instr: DecodedInstruction) u8 {
             self.P.Decimal = 1;
         },
         .SEI => {
-            self.P.InterrupDisable = 1;
+            self.P.InterrupDisable = true;
         },
         .STA => {
             self.store(instr, self.A);
@@ -1006,7 +1028,7 @@ pub fn irq(self: *Cpu) void {
         flags.B = 0;
         self.memory.write(@as(u16, self.SP) + 0x0100, @bitCast(flags));
         self.SP -%= 1;
-        self.P.InterrupDisable = 1;
+        self.P.InterrupDisable = true;
         const low: u16 = self.memory.read(0xFFFE);
         const high: u16 = self.memory.read(0xFFFF);
         self.PC = low + (high << 8);

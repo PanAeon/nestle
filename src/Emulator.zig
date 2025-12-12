@@ -9,7 +9,6 @@ const NRom = @import("mapper/NRom.zig");
 const Mapper = @import("mapper/Mapper.zig");
 const ines = @import("loader/ines.zig");
 const zaudio = @import("zaudio");
-// FIXME: what happens when I copy emulator?
 const Emulator = @This();
 
 vram: [2048]u8,
@@ -20,17 +19,25 @@ controller: Controller,
 memoryController: MemoryController,
 cpu: Cpu,
 pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
-    var f = try std.fs.openFileAbsolute("/foo/snes/Mega Man (USA).nes", .{});
-    // var f = try std.fs.openFileAbsolute("/foo/snes/Metal Gear (USA).nes", .{});
-    // var f = try std.fs.openFileAbsolute("/foo/snes/All Night Nippon Super Mario Bros. (J) (FDS Conversion).nes", .{});
-    // var f = try std.fs.openFileAbsolute("/foo/snes/Super Mario Bros. (World).nes", .{});
+      // var f = try std.fs.openFileAbsolute("/foo/snes/Metroid (USA).nes", .{});
+     // var f = try std.fs.openFileAbsolute("/foo/snes/zelda.nes", .{});
+      // var f = try std.fs.openFileAbsolute("/foo/snes/Teenage Mutant Ninja Turtles (USA).nes", .{});
+     // var f = try std.fs.openFileAbsolute("/foo/snes/Contra (USA).nes", .{});
+    var f = try std.fs.openFileAbsolute("/foo/snes/Chip 'n Dale - Rescue Rangers (USA).nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/DuckTales (USA).nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/Castlevania.USA.nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/Mega Man (USA).nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/Commando (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/BattleCity (Japan).nes", .{});
+     // var f = try std.fs.openFileAbsolute("/foo/snes/Balloon Fight (USA).nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/Metal Gear (USA).nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/Jurassic Park (USA).nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/All Night Nippon Super Mario Bros. (J) (FDS Conversion).nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/thwaite.nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/Super Mario Bros. (World).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/nestest.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/sprite.nes", .{});
-    // var f = try std.fs.openFileAbsolute("/foo/snes/DuckTales (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/controller.nes", .{});
-    // var f = try std.fs.openFileAbsolute("/foo/snes/Castlevania.USA.nes", .{});
-    // var f = try std.fs.openFileAbsolute("/foo/snes/Commando (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Total.Recall.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/testroms/palette_fill.nes", .{});
     defer f.close();
@@ -58,7 +65,7 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
     const high: u16 = emu.memoryController.read(0xFFFD);
     emu.cpu.PC = low + (high * 256);
     emu.cpu.SP = 0xFD;
-    emu.cpu.P.InterrupDisable = 1; // ???
+    emu.cpu.P.InterrupDisable = true; // ???
     // std.debug.print("current bank: {d}", emu.mapper
 
     // return emu;
@@ -78,7 +85,7 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
 
 pub fn deinit(self: *Emulator, gpa: std.mem.Allocator) void {
     self.apu.deinit(gpa);
-    self.mapper.deinit(gpa);
+    self.mapper.destroy(gpa);
 }
 
 pub fn setJoystickState(self: *Emulator, state: Controller.JoystickState) void {
@@ -159,6 +166,9 @@ pub fn run_one_frame(self: *Emulator) void {
     self.ppu.ppuStatus.VBlank = false;
     // self.ppu.ppuStatus.sprite0Hit = true;
     // self.ppu.ppuStatus.
+    if (!self.cpu.P.InterrupDisable) {
+        self.cpu.irq(); // hmm
+    }
     while (cycles < CyclesPerFrameActive) {
         const instr = self.cpu.decode2(self.cpu.PC);
         cycles += self.cpu.interpret(instr);
@@ -169,6 +179,7 @@ pub fn run_one_frame(self: *Emulator) void {
     if (self.ppu.ppuCtrl.VBlankNMIEnable) {
         self.cpu.nmi();
     }
+    self.apu.clock(10);
     while (cycles < CyclesPerFrame) {
         const instr = self.cpu.decode2(self.cpu.PC);
         cycles += self.cpu.interpret(instr);

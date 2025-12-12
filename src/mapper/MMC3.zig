@@ -1,7 +1,7 @@
 const Mapper = @import("Mapper.zig");
 const Mirroring = Mapper.Mirroring;
 const std = @import("std");
-const UxRom = @This();
+const MMC3 = @This();
 const expect = std.testing.expect;
 prgROM: []u8,
 chrROM: []u8,
@@ -11,34 +11,45 @@ vram: []u8,
 mirroring: Mirroring,
 // chrRAM: 8kb?, mirror: vertical
 
-pub fn create(gpa: std.mem.Allocator, prgROM: []u8, chrROM: []u8, chrRAM: []u8, vram: []u8, mirroring: Mirroring) !*UxRom {
-    var uxRom = try gpa.create(Mapper.UxRom);
-    uxRom.prgROM = prgROM;
-    uxRom.chrROM = chrROM;
-    uxRom.chrRAM = chrRAM;
-    uxRom.vram = vram;
-    uxRom.mirroring = mirroring;
-    uxRom.currentBank = 0;
-    return uxRom;
+pub fn init(gpa: std.mem.Allocator, prgROM: []u8, chrROM: []u8, chrRAM: []u8, vram: []u8, mirroring: Mirroring) !*MMC3 {
+    var mmc3 = try gpa.create(Mapper.MMC3);
+    mmc3.prgROM = prgROM;
+    mmc3.chrROM = chrROM;
+    mmc3.chrRAM = chrRAM;
+    mmc3.vram = vram;
+    mmc3.mirroring = mirroring;
+    mmc3.currentBank = 0;
+    return mmc3;
 }
 
-pub fn destroy(ptr: *anyopaque, gpa: std.mem.Allocator) void {
-    const m: *UxRom = @ptrCast(@alignCast(ptr));
+pub fn deinit(ptr: *anyopaque, gpa: std.mem.Allocator) void {
+    const m: *MMC3 = @ptrCast(@alignCast(ptr));
     gpa.free(m.prgROM);
     gpa.free(m.chrROM);
     gpa.free(m.chrRAM);
     gpa.destroy(m);
 }
 
-pub fn interface(self: *UxRom) Mapper {
+pub fn interface(self: *MMC3) Mapper {
     return .{
         .ptr = self,
-        .vtable = &.{ .read = read, .write = write, .ppu_read = ppu_read, .ppu_write = ppu_write, .destroy = destroy },
+        .vtable = &.{ .read = read, .write = write, .ppu_read = ppu_read, .ppu_write = ppu_write, .deinit = deinit },
     };
 }
 
+    // CPU $6000-$7FFF: 8 KB PRG RAM bank (optional)
+    // CPU $8000-$9FFF (or $C000-$DFFF): 8 KB switchable PRG ROM bank
+    // CPU $A000-$BFFF: 8 KB switchable PRG ROM bank
+    // CPU $C000-$DFFF (or $8000-$9FFF): 8 KB PRG ROM bank, fixed to the second-last bank
+    // CPU $E000-$FFFF: 8 KB PRG ROM bank, fixed to the last bank
+    // PPU $0000-$07FF (or $1000-$17FF): 2 KB switchable CHR bank
+    // PPU $0800-$0FFF (or $1800-$1FFF): 2 KB switchable CHR bank
+    // PPU $1000-$13FF (or $0000-$03FF): 1 KB switchable CHR bank
+    // PPU $1400-$17FF (or $0400-$07FF): 1 KB switchable CHR bank
+    // PPU $1800-$1BFF (or $0800-$0BFF): 1 KB switchable CHR bank
+    // PPU $1C00-$1FFF (or $0C00-$0FFF): 1 KB switchable CHR bank
 pub fn read(ptr: *anyopaque, addr: u16) u8 {
-    const m: *UxRom = @ptrCast(@alignCast(ptr));
+    const m: *MMC3 = @ptrCast(@alignCast(ptr));
 
     // std.debug.print(">>> ??: {d}\n", .{m.i});
 
@@ -80,13 +91,13 @@ pub fn read(ptr: *anyopaque, addr: u16) u8 {
 }
 
 pub fn write(ptr: *anyopaque, addr: u16, data: u8) void {
-    const m: *UxRom = @ptrCast(@alignCast(ptr));
-    // const m: *UxRom = @alignCast(@fieldParentPtr("interface", self));
+    const m: *MMC3 = @ptrCast(@alignCast(ptr));
+    // const m: *MMC3 = @alignCast(@fieldParentPtr("interface", self));
     // return self.writeFn(self.ptr, addr, data);
     switch (addr) {
         // usually cartridge ram when present
         0x6000...0x7FFF => {
-            std.debug.print(">UxRom write on 0x{x}, value: 0x{x}", .{ addr, data });
+            std.debug.print(">MMC3 write on 0x{x}, value: 0x{x}", .{ addr, data });
             // m.currentBank = data & 0b0000111; //@as(u3, @truncate(data));
         },
         0x8000...0xFFFF => {
@@ -112,7 +123,7 @@ pub fn write(ptr: *anyopaque, addr: u16, data: u8) void {
 // should map to 0x0000-0x2400, as we have 2kb of intenal rom
 // FIXME: proper unit test for vertical arrangment
 pub fn ppu_read(ptr: *anyopaque, addr: u14) u8 {
-    const m: *UxRom = @ptrCast(@alignCast(ptr));
+    const m: *MMC3 = @ptrCast(@alignCast(ptr));
     switch (m.mirroring) {
         .Horizontal => switch (addr) {
             0x0000...0x1FFF => return if (m.chrROM.len == 0) m.chrRAM[addr] else m.chrROM[addr], // 8kb of chrRAM
@@ -132,12 +143,12 @@ pub fn ppu_read(ptr: *anyopaque, addr: u14) u8 {
             0x2C00...0x2FFF => return m.vram[addr - 0x2800],
             else => @panic("boo"),
         },
-        else => std.debug.panic("unsupported mirroring by UxRom {any}", .{m.mirroring}),
+        else => std.debug.panic("unsupported mirroring by MMC3 {any}", .{m.mirroring}),
     }
 }
 
 pub fn ppu_write(ptr: *anyopaque, addr: u14, data: u8) void {
-    const m: *UxRom = @ptrCast(@alignCast(ptr));
+    const m: *MMC3 = @ptrCast(@alignCast(ptr));
     switch (m.mirroring) {
         .Horizontal => switch (addr) {
             0x0000...0x1FFF => m.chrRAM[addr] = data, // 8kb of chrRAM
@@ -157,15 +168,15 @@ pub fn ppu_write(ptr: *anyopaque, addr: u14, data: u8) void {
             0x2C00...0x2FFF => m.vram[addr - 0x2800] = data,
             else => @panic("boo"),
         },
-        else => std.debug.panic("unsupported mirroring by UxRom {any}", .{m.mirroring}),
+        else => std.debug.panic("unsupported mirroring by MMC3 {any}", .{m.mirroring}),
     }
 }
 
 test "Horizontal must mirror horizontally" {
     var rom = [_]u8{};
     var chrRAM = [_]u8{};
-    var uxrom = UxRom.init(&rom, &chrRAM, .Horizontal);
-    var mapper = uxrom.interface();
+    var mmc3 = MMC3.init(&rom, &chrRAM, .Horizontal);
+    var mapper = mmc3.interface();
     mapper.ppu_write(0x20F0, 13);
     try expect(mapper.ppu_read(0x28F0) == 13);
     mapper.ppu_write(0x24F0, 7);
@@ -180,8 +191,8 @@ test "Horizontal must mirror horizontally" {
 test "Vertical must mirror vertically" {
     var rom = [_]u8{};
     var chrRAM = [_]u8{};
-    var uxrom = UxRom.init(&rom, &chrRAM, .Vertical);
-    var mapper = uxrom.interface();
+    var mmc3 = MMC3.init(&rom, &chrRAM, .Vertical);
+    var mapper = mmc3.interface();
     mapper.ppu_write(0x20F0, 13);
     try expect(mapper.ppu_read(0x24F0) == 13);
     mapper.ppu_write(0x28F0, 7);

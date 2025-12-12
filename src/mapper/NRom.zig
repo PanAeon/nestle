@@ -9,7 +9,7 @@ vram: []u8,
 mirroring: Mirroring,
 prgRAM: [2048]u8, // or 4k in Family Basic only
 
-pub fn init(gpa: std.mem.Allocator, prgROM: []u8, chrROM: []u8, vram: []u8, mirroring: Mirroring) !*NRom {
+pub fn create(gpa: std.mem.Allocator, prgROM: []u8, chrROM: []u8, vram: []u8, mirroring: Mirroring) !*NRom {
     var nrom = try gpa.create(NRom);
     nrom.prgROM = prgROM;
     nrom.chrROM = chrROM;
@@ -17,7 +17,7 @@ pub fn init(gpa: std.mem.Allocator, prgROM: []u8, chrROM: []u8, vram: []u8, mirr
     nrom.mirroring = mirroring;
     return nrom;
 }
-pub fn deinit(ptr: *anyopaque, gpa: std.mem.Allocator) void {
+pub fn destroy(ptr: *anyopaque, gpa: std.mem.Allocator) void {
     const m: *NRom = @ptrCast(@alignCast(ptr));
     gpa.free(m.prgROM);
     gpa.free(m.chrROM);
@@ -27,7 +27,7 @@ pub fn deinit(ptr: *anyopaque, gpa: std.mem.Allocator) void {
 pub fn interface(self: *NRom) Mapper {
     return .{
         .ptr = self,
-        .vtable = &.{ .read = read, .write = write, .ppu_read = ppu_read, .ppu_write = ppu_write, .deinit = deinit },
+        .vtable = &.{ .read = read, .write = write, .ppu_read = ppu_read, .ppu_write = ppu_write, .destroy = destroy },
     };
 }
 

@@ -13,6 +13,7 @@ const LengthTable: [32]u8 = .{
 };
 const LengthTimer = struct {
 };
+// ma_node_set_state_time() to the rescue
 const PulseChannel = struct {
     const DutyCycleAndVolume = packed struct { 
         volume: u4 = 0, // envelope period
@@ -37,8 +38,6 @@ const PulseChannel = struct {
     config: zaudio.Pulsewave.Config = undefined,
     wave: *zaudio.Pulsewave = undefined,
     node: *zaudio.DataSourceNode = undefined,
-    engine: *zaudio.Engine = undefined,
-    sound: *zaudio.Sound = undefined,
     enabled: bool = false,
     muted: bool = false,
     length: u8 = 0,
@@ -51,7 +50,6 @@ const PulseChannel = struct {
         var channel: PulseChannel = .{};
         channel.config = zaudio.Pulsewave.Config.init(.float32, audio.engine.asNodeGraph().getChannels(), audio.engine.getSampleRate(), 0.8, 0.0, 440);
         channel.wave = try zaudio.Pulsewave.create(channel.config);
-        channel.engine = audio.engine;
 
         channel.node = try audio.engine.asNodeGraphMut().createDataSourceNode(
             zaudio.DataSourceNode.Config.init(channel.wave.asDataSourceMut()),
@@ -112,70 +110,62 @@ const PulseChannel = struct {
         // FIXME: if t < 8 mute
         const frequency =  fCPU / (16.0 * (@as(f64, @floatFromInt(t)) + 1.0));
         self.wave.setFrequency(frequency) catch { std.debug.print("can't set freq\n", .{});};
-        self.node.asNodeMut().setState(.started) catch { std.debug.print("can't set freq\n", .{});};
         if (_timerHigh.lengthCounterLoad == 0) {
             // one shot
             //  the length counter should be loaded with a time longer than the length of the envelope
             //  to prevent it from being cut off early.
-            // self.length = 8; //FIXME: probably wrong
-           const endTime = self.engine.asNodeGraph().getTime() +
-                        (@as(u64, self.volumeCounter) * 16 *
-                        self.engine.getSampleRate() / 1000);
-           self.node.asNodeMut().setStateTime(.stopped, endTime) catch { std.debug.print("can't set freq\n", .{});};
+            self.length = 8; //FIXME: probably wrong
         } else if (_timerHigh.lengthCounterLoad == 1) {
             // FIXME: infinite play
-            // self.dutyCycleAndVolume.lengthCounterHalt = true;
+            self.dutyCycleAndVolume.lengthCounterHalt = true;
         } else {
-           const endTime = self.engine.asNodeGraph().getTime() +
-                        (@as(u64, LengthTable[_timerHigh.lengthCounterLoad]) * 16 *
-                        self.engine.getSampleRate() / 1000);
-           self.node.asNodeMut().setStateTime(.stopped, endTime) catch { std.debug.print("can't set freq\n", .{});};
+           self.length = LengthTable[_timerHigh.lengthCounterLoad];
         }
     }
-    // pub fn clockLength(self: *PulseChannel) void {
-    //     if (!self.dutyCycleAndVolume.lengthCounterHalt and self.length > 0) {
-    //         self.length -= 1;
-    //     }
-    //     if (self.length == 0) {
-    //         self.wave.setAmplitude(0) catch { std.debug.print("can't setAmplitude\n", .{});};
-    //     }
-    //     // now sweep unit... https://www.nesdev.org/wiki/APU_Sweep
-    //     // TODO: different sweep algorithm for two pulses..
-    //     if (self.sweepSetup.enabled and self.sweepSetup.shiftCount > 0) {
-    //         if (self.sweepPeriod == 0) {
-    //             self.sweepPeriod = self.sweepSetup.period;
-    //             const t:u11 = self.timerLow + (@as(u11,self.timerAndLengthCounter.timerHigh) << 8);
-    //             const t1 = t >> self.sweepSetup.shiftCount;
-    //             self.rawTimerPeriod =  if (self.sweepSetup.negative) self.rawTimerPeriod-%t1 else self.rawTimerPeriod+%t1;
-    //             // FIXME: clamp to 0.. targetPeriod
-    //             // FIXME: if t < 8 mute
-    //             const frequency =  fCPU / (16.0 * (@as(f64, @floatFromInt(self.rawTimerPeriod)) + 1.0));
-    //             self.wave.setFrequency(frequency) catch { std.debug.print("can't set freq\n", .{});};
-    //         } else {
-    //             self.sweepPeriod -= 1;
-    //         }
-    //     }
-    //
-    // }
-    // pub fn clockVolumeEnvelope(self: *PulseChannel) void {
-    //     if (!self.dutyCycleAndVolume.constantVolume) {
-    //         if (self.volumeCounter == 0) {
-    //             self.volumeCounter = self.dutyCycleAndVolume.volume;
-    //             if (self.envelopeVolume == 0 and self.dutyCycleAndVolume.lengthCounterHalt) {
-    //                 self.envelopeVolume = 15;
-    //             } else if (self.envelopeVolume > 0) {
-    //                 self.envelopeVolume -= 1;
-    //             }
-    //             if (self.envelopeVolume > 0) {
-    //                  // FIXME: negative volume on inverted period..
-    //                  const amplitude = @as(f64, @floatFromInt(self.envelopeVolume)) / 16.0;
-    //                  self.wave.setAmplitude(amplitude) catch { std.debug.print("can't set ampl\n", .{});};
-    //             }
-    //         } else {
-    //             self.volumeCounter -=1;
-    //         }
-    //     }
-    // }
+    pub fn clockLength(self: *PulseChannel) void {
+        if (!self.dutyCycleAndVolume.lengthCounterHalt and self.length > 0) {
+            self.length -= 1;
+        }
+        if (self.length == 0) {
+            self.wave.setAmplitude(0) catch { std.debug.print("can't setAmplitude\n", .{});};
+        }
+        // now sweep unit... https://www.nesdev.org/wiki/APU_Sweep
+        // TODO: different sweep algorithm for two pulses..
+        if (self.sweepSetup.enabled and self.sweepSetup.shiftCount > 0) {
+            if (self.sweepPeriod == 0) {
+                self.sweepPeriod = self.sweepSetup.period;
+                const t:u11 = self.timerLow + (@as(u11,self.timerAndLengthCounter.timerHigh) << 8);
+                const t1 = t >> self.sweepSetup.shiftCount;
+                self.rawTimerPeriod =  if (self.sweepSetup.negative) self.rawTimerPeriod-%t1 else self.rawTimerPeriod+%t1;
+                // FIXME: clamp to 0.. targetPeriod
+                // FIXME: if t < 8 mute
+                const frequency =  fCPU / (16.0 * (@as(f64, @floatFromInt(self.rawTimerPeriod)) + 1.0));
+                self.wave.setFrequency(frequency) catch { std.debug.print("can't set freq\n", .{});};
+            } else {
+                self.sweepPeriod -= 1;
+            }
+        }
+
+    }
+    pub fn clockVolumeEnvelope(self: *PulseChannel) void {
+        if (!self.dutyCycleAndVolume.constantVolume) {
+            if (self.volumeCounter == 0) {
+                self.volumeCounter = self.dutyCycleAndVolume.volume;
+                if (self.envelopeVolume == 0 and self.dutyCycleAndVolume.lengthCounterHalt) {
+                    self.envelopeVolume = 15;
+                } else if (self.envelopeVolume > 0) {
+                    self.envelopeVolume -= 1;
+                }
+                if (self.envelopeVolume > 0) {
+                     // FIXME: negative volume on inverted period..
+                     const amplitude = @as(f64, @floatFromInt(self.envelopeVolume)) / 16.0;
+                     self.wave.setAmplitude(amplitude) catch { std.debug.print("can't set ampl\n", .{});};
+                }
+            } else {
+                self.volumeCounter -=1;
+            }
+        }
+    }
 
     pub fn setSweep(self: *PulseChannel, sweep: SweepSetup) void {
         self.sweepSetup = sweep;
@@ -199,13 +189,11 @@ const TriangleChannel = struct {
     config: zaudio.Waveform.Config = undefined,
     wave: *zaudio.Waveform = undefined,
     node: *zaudio.DataSourceNode = undefined,
-    engine: *zaudio.Engine = undefined,
     enabled: bool = false,
     length: u8 = 0,
     linearTimer: u7 = 0,
     pub fn create(audio: *AudioState) !TriangleChannel {
         var channel: TriangleChannel = .{};
-        channel.engine = audio.engine;
         channel.config = zaudio.Waveform.Config.init(
           .float32, audio.engine.asNodeGraph().getChannels(), audio.engine.getSampleRate(), .triangle, 0.0, 440);
         channel.wave = try zaudio.Waveform.create(channel.config);
@@ -239,11 +227,6 @@ const TriangleChannel = struct {
     pub fn setLinearCounter(self: *TriangleChannel, _counter: LinearCounter) void {
         self.linearCounter = _counter;
         self.linearTimer = _counter.linearCounterReloadValue;
-        self.node.asNodeMut().setState(.started) catch { std.debug.print("can't set freq\n", .{});};
-        const endTime = self.engine.asNodeGraph().getTime() +
-                        (@as(u64, self.linearCounter.linearCounterReloadValue) * 16 *
-                        self.engine.getSampleRate() / 1000);
-        self.node.asNodeMut().setStateTime(.stopped, endTime) catch { std.debug.print("can't set freq\n", .{});};
     }
     pub fn setTimerLow(self: *TriangleChannel, _timerLow: u8) void {
         self.timerLow = _timerLow;
@@ -259,48 +242,40 @@ const TriangleChannel = struct {
         // FIXME: if t < 8 mute
         const frequency =  fCPU / (32.0 * (@as(f64, @floatFromInt(t)) + 1.0));
         self.wave.setFrequency(frequency) catch { std.debug.print("can't set freq\n", .{});};
-        self.node.asNodeMut().setState(.started) catch { std.debug.print("can't set freq\n", .{});};
         if (_timerHigh.lengthCounterLoad == 0) {
             // one shot
             //  the length counter should be loaded with a time longer than the length of the envelope
             //  to prevent it from being cut off early.
-            // self.length = 8; //FIXME: probably wrong
-           const endTime = self.engine.asNodeGraph().getTime() +
-                        (16 * 16 *
-                        self.engine.getSampleRate() / 1000);
-           self.node.asNodeMut().setStateTime(.stopped, endTime) catch { std.debug.print("can't set freq\n", .{});};
+            self.length = 8; //FIXME: probably wrong
         } else if (_timerHigh.lengthCounterLoad == 1) {
             // FIXME: infinite play
             self.linearCounter.lengthCounterHalt = true;
         } else {
-           const endTime = self.engine.asNodeGraph().getTime() +
-                        (@as(u64, LengthTable[_timerHigh.lengthCounterLoad]) * 16 *
-                        self.engine.getSampleRate() / 1000);
-           self.node.asNodeMut().setStateTime(.stopped, endTime) catch { std.debug.print("can't set freq\n", .{});};
+           self.length = LengthTable[_timerHigh.lengthCounterLoad];
         }
     }
-    // pub fn clockLength(self: *TriangleChannel) void {
-    //     if (!self.linearCounter.lengthCounterHalt and self.length > 0) {
-    //         self.length -= 1;
-    //     }
-    //     if (self.length == 0) {
-    //         self.wave.setAmplitude(0) catch { std.debug.print("can't setAmplitude\n", .{});};
-    //     }
-    //
-    // }
-    // pub fn clockLinearCounter(self: *TriangleChannel) void {
-    //     if (self.linearCounter.lengthCounterHalt) {
-    //         if (self.linearTimer == 0) {
-    //             self.linearTimer = self.linearCounter.linearCounterReloadValue;
-    //         }
-    //     } 
-    //     if (self.linearTimer > 0) {
-    //         self.linearTimer -= 1;
-    //     }
-    //     if (self.linearTimer == 0) {
-    //         self.wave.setAmplitude(0) catch { std.debug.print("can't setAmplitude\n", .{});};
-    //     }
-    // }
+    pub fn clockLength(self: *TriangleChannel) void {
+        if (!self.linearCounter.lengthCounterHalt and self.length > 0) {
+            self.length -= 1;
+        }
+        if (self.length == 0) {
+            self.wave.setAmplitude(0) catch { std.debug.print("can't setAmplitude\n", .{});};
+        }
+
+    }
+    pub fn clockLinearCounter(self: *TriangleChannel) void {
+        if (self.linearCounter.lengthCounterHalt) {
+            if (self.linearTimer == 0) {
+                self.linearTimer = self.linearCounter.linearCounterReloadValue;
+            }
+        } 
+        if (self.linearTimer > 0) {
+            self.linearTimer -= 1;
+        }
+        if (self.linearTimer == 0) {
+            self.wave.setAmplitude(0) catch { std.debug.print("can't setAmplitude\n", .{});};
+        }
+    }
 
 };
 // https://www.nesdev.org/wiki/APU_Noise
@@ -326,7 +301,6 @@ const NoiseChannel = struct {
     config: zaudio.Noise.Config = undefined,
     wave: *zaudio.Noise = undefined,
     node: *zaudio.DataSourceNode = undefined,
-    engine: *zaudio.Engine = undefined,
     enabled: bool = false,
     length: u8 = 0,
     sweepPeriod: u4 = 0,
@@ -336,12 +310,11 @@ const NoiseChannel = struct {
 
     pub fn create(audio: *AudioState) !NoiseChannel {
         var channel: NoiseChannel = .{};
-        channel.engine = audio.engine;
         channel.config = zaudio.Noise.Config.init(
                     .float32, 
                     audio.engine.asNodeGraph().getChannels(), 
-                    .white,
-                     0, 1.0); // TODO: seed,
+                    .brownian,
+                     100, 0.0); // TODO: seed,
         channel.wave = try zaudio.Noise.create(channel.config);
 
         channel.node = try audio.engine.asNodeGraphMut().createDataSourceNode(
@@ -379,45 +352,45 @@ const NoiseChannel = struct {
         self.wave.setAmplitude(amplitude) catch { std.debug.print("can't set ampl\n", .{});};
     }
     // Writing to $4003/$4007 reloads the length counter, restarts the envelope, and resets the phase of the pulse generator.
-    // pub fn clockLength(self: *NoiseChannel) void {
-    //     if (!self.volume.lengthCounterHalt and self.length > 0) {
-    //         self.length -= 1;
-    //     }
-    //     if (self.length == 0) {
-    //         self.wave.setAmplitude(0) catch { std.debug.print("can't setAmplitude\n", .{});};
-    //     }
-    //
-    // }
-    // pub fn clockVolumeEnvelope(self: *NoiseChannel) void {
-    //     if (!self.volume.constantVolume) {
-    //         if (self.volumeCounter == 0) {
-    //             self.volumeCounter = self.volume.volume;
-    //             if (self.envelopeVolume == 0 and self.volume.lengthCounterHalt) {
-    //                 self.envelopeVolume = 15;
-    //             } else if (self.envelopeVolume > 0) {
-    //                 self.envelopeVolume -= 1;
-    //             }
-    //             if (self.envelopeVolume > 0) {
-    //                  // FIXME: negative volume on inverted period..
-    //                  const amplitude = @as(f64, @floatFromInt(self.envelopeVolume)) / 16.0;
-    //                  self.wave.setAmplitude(amplitude) catch { std.debug.print("can't set ampl\n", .{});};
-    //             }
-    //         } else {
-    //             self.volumeCounter -=1;
-    //         }
-    //     }
-    //     if (self.volume.lengthCounterHalt) {
-    //         if (self.linearTimer == 0) {
-    //             self.linearTimer = self.lengthCounter.lengthCounterLoad;
-    //         }
-    //     } 
-    //     if (self.linearTimer > 0) {
-    //         self.linearTimer -= 1;
-    //     }
-    //     if (self.linearTimer == 0) {
-    //         self.wave.setAmplitude(0) catch { std.debug.print("can't setAmplitude\n", .{});};
-    //     }
-    // }
+    pub fn clockLength(self: *NoiseChannel) void {
+        if (!self.volume.lengthCounterHalt and self.length > 0) {
+            self.length -= 1;
+        }
+        if (self.length == 0) {
+            self.wave.setAmplitude(0) catch { std.debug.print("can't setAmplitude\n", .{});};
+        }
+
+    }
+    pub fn clockVolumeEnvelope(self: *NoiseChannel) void {
+        if (!self.volume.constantVolume) {
+            if (self.volumeCounter == 0) {
+                self.volumeCounter = self.volume.volume;
+                if (self.envelopeVolume == 0 and self.volume.lengthCounterHalt) {
+                    self.envelopeVolume = 15;
+                } else if (self.envelopeVolume > 0) {
+                    self.envelopeVolume -= 1;
+                }
+                if (self.envelopeVolume > 0) {
+                     // FIXME: negative volume on inverted period..
+                     const amplitude = @as(f64, @floatFromInt(self.envelopeVolume)) / 16.0;
+                     self.wave.setAmplitude(amplitude) catch { std.debug.print("can't set ampl\n", .{});};
+                }
+            } else {
+                self.volumeCounter -=1;
+            }
+        }
+        if (self.volume.lengthCounterHalt) {
+            if (self.linearTimer == 0) {
+                self.linearTimer = self.lengthCounter.lengthCounterLoad;
+            }
+        } 
+        if (self.linearTimer > 0) {
+            self.linearTimer -= 1;
+        }
+        if (self.linearTimer == 0) {
+            self.wave.setAmplitude(0) catch { std.debug.print("can't setAmplitude\n", .{});};
+        }
+    }
 
     pub fn setNoise(self: *NoiseChannel, n: Noise) void {
         self.noise = n;
@@ -425,11 +398,6 @@ const NoiseChannel = struct {
     }
     pub fn setLengthCounter(self: *NoiseChannel, c:LengthCounter) void {
         self.lengthCounter = c;
-        self.node.asNodeMut().setState(.started) catch { std.debug.print("can't set freq\n", .{});};
-        const endTime = self.engine.asNodeGraph().getTime() +
-                        (@as(u64, self.lengthCounter.lengthCounterLoad) * 16 *
-                        self.engine.getSampleRate() / 1000);
-        self.node.asNodeMut().setStateTime(.stopped, endTime) catch { std.debug.print("can't set freq\n", .{});};
     }
 };
 const DMCChannel = struct {
@@ -573,6 +541,19 @@ pub fn deinit(self: *Apu, gpa: std.mem.Allocator) void {
     self.noiseChannel.destroy();
     self.audio.destroy(gpa);
 }
+pub fn clockEnvelopes(self: *Apu) void {
+    _ = &self;
+    self.pulse1Channel.clockVolumeEnvelope();
+    self.pulse2Channel.clockVolumeEnvelope();
+    self.triangleChannel.clockLinearCounter();
+    self.noiseChannel.clockVolumeEnvelope();
+}
+pub fn clockLengthCounters(self: *Apu) void {
+    self.pulse1Channel.clockLength();
+    self.pulse2Channel.clockLength();
+    self.triangleChannel.clockLength();
+    self.noiseChannel.clockLength();
+}
 // It ticks approximately 4 times per frame (240Hz NTSC), and executes either a 4 or 5-step sequence,
 // depending how it is configured. It may optionally issue an IRQ on the last tick of the 4-step sequence.
 // https://www.nesdev.org/wiki/APU_Frame_Counter
@@ -580,13 +561,45 @@ pub fn deinit(self: *Apu, gpa: std.mem.Allocator) void {
 pub fn clock(self: *Apu, apu_cycles: u64) void {
     _ = &apu_cycles;
     // for (0..4) |_| {
+        self.clockEnvelopes();
     // }
-    // self.clockLengthCounters();
+    self.clockLengthCounters();
     // self.clockLengthCounters();
     if (!self.frameCounter.disableFrameInterrupt) {
-        // self.frameInterrupt = true; // FIXME: trigger interupt
+        self.frameInterrupt = true; // FIXME: trigger interupt
     }
 }
+// pub fn clock(self: *Apu, apu_cycles: u64) void {
+//     self.cyclesElapsed += apu_cycles;
+//     if (self.frameCounter.fiveFrameSequence) {
+//         if (self.cyclesElapsed >= 3728) {
+//             self.clockEnvelopes();
+//         } else if (self.cyclesElapsed >= 7456) {
+//             self.clockEnvelopes();
+//             self.clockLengthCounters();
+//         } else if (self.cyclesElapsed >= 11185) {
+//             self.clockEnvelopes();
+//         } else if (self.cyclesElapsed >= 18640) {
+//             self.clockEnvelopes();
+//             self.clockLengthCounters();
+//         }
+//     } else {
+//         if (self.cyclesElapsed >= 3728) {
+//             self.clockEnvelopes();
+//         } else if (self.cyclesElapsed >= 7456) {
+//             self.clockEnvelopes();
+//             self.clockLengthCounters();
+//         } else if (self.cyclesElapsed >= 11185) {
+//             self.clockEnvelopes();
+//         } else if (self.cyclesElapsed >= 14914) {
+//             self.clockEnvelopes();
+//             self.clockLengthCounters();
+//             if (!self.frameCounter.disableFrameInterrupt) {
+//                 self.frameInterrupt = true; // FIXME: trigger interupt
+//             }
+//         }
+//     }
+// }
 
 pub fn read(self: *Apu, addr: u16) u8 {
     // std.debug.print("apu read: 0x{X}\n", .{addr});
