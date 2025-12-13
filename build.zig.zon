@@ -36,18 +36,6 @@
             .url = "git+https://github.com/zig-gamedev/zgui#22deaab3363ac0fd8f34b91a1cd66883199960f9",
             .hash = "zgui-0.6.0-dev--L6sZATybQCK2aBUnZ_5VKga-60UiZZ0v4e0T9doN4iu",
         },
-        .zpool = .{
-            .url = "git+https://github.com/zig-gamedev/zpool#2ebe5b065d19989a0c5b4f06227c524c8404c516",
-            .hash = "zpool-0.11.0-dev-bG692YNDAQAyX1pDZKrJrDmorwVqVNTZbbH-zpoDQO-N",
-        },
-        .zgpu = .{
-            .url = "git+https://github.com/zig-gamedev/zgpu#b582a62c13af1a8228f72c47ea2eaa21259760eb",
-            .hash = "zgpu-0.12.0-dev-nqFT5IChCACWEis11EjrBQGaA0QXEqXfsi1e6cF3_AL3",
-        },
-        .zsdl = .{
-            .url = "git+https://github.com/zig-gamedev/zsdl#8c6617c2ce3384a6e910ff67d621c9ded1c049fc",
-            .hash = "zsdl-0.4.0-dev-rFpjE8cHXwBwnQAeRLDaUSGhH-mljzoiuHDydEVQbCeE",
-        },
         .zopengl = .{
             .path = "../zopengl",
             // .hash = "zopengl-0.6.0-dev-5-tnzyyoCgC3pTkB1hXXYSLnkXppSZAsJJJDP-FlogKa",
@@ -61,9 +49,12 @@
             .hash = "zmath-0.11.0-dev-wjwivdMsAwD-xaLj76YHUq3t9JDH-X16xuMTmnDzqbu2",
         },
         .zaudio = .{
-            .url = "git+https://github.com/zig-gamedev/zaudio#bb93ad665b89e302d4515a36b44cb8e73eaf6766",
-            .hash = "zaudio-0.11.0-dev-_M-91kHvPwAlW8MCRI4XiTbTeihqB8Zspgiuw-6Gqgdz",
+            .path = "../zaudio",
         },
+        // .zaudio = .{
+        //     .url = "git+https://github.com/zig-gamedev/zaudio#bb93ad665b89e302d4515a36b44cb8e73eaf6766",
+        //     .hash = "zaudio-0.11.0-dev-_M-91kHvPwAlW8MCRI4XiTbTeihqB8Zspgiuw-6Gqgdz",
+        // },
     },
     .paths = .{
         "build.zig",

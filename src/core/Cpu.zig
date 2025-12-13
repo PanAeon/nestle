@@ -500,9 +500,9 @@ pub fn store(self: *Cpu, instr: DecodedInstruction, value: u8) void {
         .ZeroPage => self.memory.write(instr.arg0, value),
         .ZeroPageX => self.memory.write(self.X +% instr.arg0, value),
         .ZeroPageY => self.memory.write(self.Y +% instr.arg0, value),
-        .Absolute => self.memory.write(@as(u16, instr.arg0) + ((@as(u16, instr.arg1) << 8)), value),
-        .AbsoluteX => self.memory.write(@as(u16, self.X) + @as(u16, instr.arg0) + (@as(u16, instr.arg1) << 8), value),
-        .AbsoluteY => self.memory.write(@as(u16, self.Y) + @as(u16, instr.arg0) + (@as(u16, instr.arg1) << 8), value),
+        .Absolute => self.memory.write(@as(u16, instr.arg0) +% ((@as(u16, instr.arg1) << 8)), value),
+        .AbsoluteX => self.memory.write(@as(u16, self.X) +% @as(u16, instr.arg0) +% ((@as(u16, instr.arg1) << 8)), value),
+        .AbsoluteY => self.memory.write(@as(u16, self.Y) +% @as(u16, instr.arg0) +% ((@as(u16, instr.arg1) << 8)), value),
         .IndirectX => brk: {
             // val = PEEK(PEEK((arg + X) % 256) + PEEK((arg + X + 1) % 256) * 256)
             const a1 = self.memory.read(self.X +% instr.arg0);

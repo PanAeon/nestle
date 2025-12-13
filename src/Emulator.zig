@@ -23,7 +23,7 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
      // var f = try std.fs.openFileAbsolute("/foo/snes/zelda.nes", .{});
       // var f = try std.fs.openFileAbsolute("/foo/snes/Teenage Mutant Ninja Turtles (USA).nes", .{});
      // var f = try std.fs.openFileAbsolute("/foo/snes/Contra (USA).nes", .{});
-    var f = try std.fs.openFileAbsolute("/foo/snes/Chip 'n Dale - Rescue Rangers (USA).nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/Chip 'n Dale - Rescue Rangers (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/DuckTales (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Castlevania.USA.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Mega Man (USA).nes", .{});
@@ -32,7 +32,7 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
      // var f = try std.fs.openFileAbsolute("/foo/snes/Balloon Fight (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Metal Gear (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Jurassic Park (USA).nes", .{});
-    // var f = try std.fs.openFileAbsolute("/foo/snes/All Night Nippon Super Mario Bros. (J) (FDS Conversion).nes", .{});
+    var f = try std.fs.openFileAbsolute("/foo/snes/All Night Nippon Super Mario Bros. (J) (FDS Conversion).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/thwaite.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Super Mario Bros. (World).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/nestest.nes", .{});
@@ -59,6 +59,7 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
     emu.controller = Controller.init();
     emu.memoryController = MemoryController{ .mapper = emu.mapper, .apu = &emu.apu, .ppu = &emu.ppu, .controller = &emu.controller };
     emu.ppu.memoryController = &emu.memoryController;
+    emu.apu.memoryController = &emu.memoryController;
     emu.cpu = Cpu.init(&emu.memoryController);
     emu.ppu.cpu = &emu.cpu;
     const low: u16 = emu.memoryController.read(0xFFFC);

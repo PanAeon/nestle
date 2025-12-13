@@ -66,6 +66,7 @@ check.dependOn(&exe_check.step);
 
     const zaudio = b.dependency("zaudio", .{});
     exe.root_module.addImport("zaudio", zaudio.module("root"));
+    mod.addImport("zaudio", zaudio.module("root"));
     exe.linkLibrary(zaudio.artifact("miniaudio"));
 
 
