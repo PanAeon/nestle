@@ -15,6 +15,165 @@ const LengthTable: [32]u8 = .{
 const RateInCpuCycles = [_]f64{428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106,  84,  72,  54};
 const LengthTimer = struct {
 };
+
+// how many cpu cycles before shift register clocks
+const NoisePeriod = [_]f64{4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068};
+
+const NoiseDS = struct {
+    ds: zaudio.DataSourceBase = undefined,
+    noisePeriod: u32 = 0, // num cpu cycles until next shift 
+    loopNoise: bool = false,
+    // time: f64 = 0,
+    // advance: f64 = 0,
+    shiftRegister: u15 = 1,
+    amplitude: f32 = 1.0,
+    cycles: u64 = 0,
+
+    pub fn shift(noise: *NoiseDS) void {
+        // const res = getBit(noise.shiftRegister,0);
+        const feedback = if (noise.loopNoise) 
+                             getBit(noise.shiftRegister, 0)^getBit(noise.shiftRegister,6)
+                         else 
+                             getBit(noise.shiftRegister, 0)^getBit(noise.shiftRegister,1);
+        noise.shiftRegister >>= 1;                      
+        noise.shiftRegister = setBit(noise.shiftRegister,14, feedback);
+        // return res;
+    }
+
+    pub fn calculateAdvance(period: u64) f64 {
+        const freq = fCPU / @as(f64, @floatFromInt(period));
+        return (1.0 / (DEVICE_SAMPLE_RATE / freq));
+    }
+    const numCyclesInFrame: u32 = @intFromFloat(fCPU / DEVICE_SAMPLE_RATE );
+
+    pub fn create(allocator: std.mem.Allocator, period: u4, loop:bool, a: f32) zaudio.Error!*NoiseDS {
+        var noise = try allocator.create(NoiseDS);
+        noise.noisePeriod = NoisePeriod[period];
+        noise.loopNoise = loop;
+        noise.cycles = 0;
+        // noise.time = 0.0;
+        // noise.advance = calculateAdvance(period);
+        noise.shiftRegister = 1;
+        noise.amplitude = a;
+        const dsConfig = zaudio.DataSource.Config.init();
+        dsConfig.vtable = vtable;
+        try zaudio.DataSource.create(dsConfig, &noise.ds);
+    }
+
+    pub fn destroy(handle: *NoiseDS, allocator: std.mem.Allocator) void {
+        zaudio.DataSource.destroy(handle.ds);
+        allocator.destroy(handle);
+    }
+    
+    pub fn asDataSource(handle: *NoiseDS) *const zaudio.DataSource {
+        return @as(*const zaudio.DataSource, @ptrCast(handle));
+    }
+    pub fn asDataSourceMut(handle: *NoiseDS) *zaudio.DataSource {
+        return @as(*zaudio.DataSource, @ptrCast(handle));
+    }
+
+    const vtable: zaudio.DataSource.VTable = .{
+        .onRead = onRead,
+        .onSeek = onSeek, // noop
+        .onGetDataFormat = onGetDataFormat, 
+        .onGetCursor = null,
+        .onGetLength = null,
+        .onSetLooping = null,
+        .flags = 0,
+    };
+
+    pub fn onRead(ds: *zaudio.DataSource,
+                  frames_out: ?*anyopaque,
+                  frame_count: u64,
+                  frames_read: *u64) callconv(.c) zaudio.Result {
+        const pNoise:*NoiseDS = @ptrCast(@alignCast(ds));
+        if (frames_out) |*frames| {
+            var pFramesOutF32: *f32 = @ptrCast(frames);
+            for (0..frame_count) |i| {
+                pNoise.cycles += numCyclesInFrame;
+                if (pNoise.cycles > pNoise.noisePeriod) {
+                    pNoise.cycles -= pNoise.noisePeriod;
+                    pNoise.shift();
+                }
+                const b:u1 = getBit(pNoise.shiftRegister,0);
+                const s:f32 = pNoise.amplitude * b;
+                
+                pFramesOutF32[i*2] = s;
+                pFramesOutF32[i*2+1] = s;
+            }
+
+
+
+        } else {
+            for (0..frame_count) |_| {
+                pNoise.cycles += numCyclesInFrame;
+                if (pNoise.cycles > pNoise.noisePeriod) {
+                    pNoise.cycles -= pNoise.noisePeriod;
+                    pNoise.shift();
+                }
+            }
+            // TODO: advance here
+            // for 
+
+            // pNoise.time += pNoise.advance * frame_count;
+        }
+        frames_read.* = frame_count;
+        return .success;
+    }
+    pub fn onSeek(ds: *zaudio.DataSource,
+                  frame_index: u64,
+                  ) callconv(.c) zaudio.Result {
+        _ = &ds; _ = &frame_index;
+        return .success;
+    }
+    pub fn onGetDataFormat(ds: *zaudio.DataSource,
+            format: ?*zaudio.Format,
+            channels: ?*u32,
+            sample_rate: ?*u32,
+            channel_map: ?[*]zaudio.Channel,
+            channel_map_cap: usize,
+            ) callconv(.c) zaudio.Result {
+        _ = &ds;
+        _ = &format;
+        _ = &channels;
+        _ = &sample_rate;
+        _ = &channel_map;
+        _ = &channel_map_cap;
+        // const pNoise:*NoiseDS = @ptrCast(@alignCast(ds));
+        format.?.* = .float32;
+        channels.?.* = 2;
+        sample_rate.?.* = 0; // no notion for noise
+
+
+    ma_channel_map_init_standard(
+        .ma_standard_channel_map_default, 
+        channel_map, channel_map_cap, 2);
+
+        return .success;
+    }
+    extern fn ma_channel_map_init_standard(
+              channel_map: standard_channel_map,
+              channel: *zaudio.Channel,
+              cap: usize,
+              channels: u32
+            ) void;
+
+    pub const standard_channel_map = enum (u32) {
+    ma_standard_channel_map_microsoft,
+    ma_standard_channel_map_alsa,
+    ma_standard_channel_map_rfc3551,   // Based off AIFF. */
+    ma_standard_channel_map_flac,
+    ma_standard_channel_map_vorbis,
+    ma_standard_channel_map_sound4,    // FreeBSD's sound(4). */
+    ma_standard_channel_map_sndio,     // www.sndio.org/tips.html */
+    ma_standard_channel_map_webaudio = .ma_standard_channel_map_flac,
+    ma_standard_channel_map_default = .ma_standard_channel_map_microsoft
+
+
+    };
+};
+
+
 const PulseChannel = struct {
     const DutyCycleAndVolume = packed struct { 
         volume: u4 = 0, // envelope period
@@ -850,3 +1009,34 @@ pub fn write(self: *Apu, addr: u16, data: u8) void {
 //       self.triangleChannel, self.noiseChannel, self.dmcChannel,
 //       self.status, self.frameCounter});
 // }
+
+pub fn getBit(number: anytype, n: comptime_int) u1 {
+    // Ensure n is within the bounds of the number's bit width
+    comptime {
+        if (n >= @typeInfo(@TypeOf(number)).int.bits) {
+            @compileError("Bit index 'n' is out of bounds for the given number type.");
+        }
+    }
+
+    // Create a mask with the nth bit set
+    const mask = @as(@TypeOf(number), 1) << n;
+
+    // Perform bitwise AND and then right shift to get the bit's value
+    return @as(u1, @truncate((number & mask) >> n));
+}
+pub fn setBit(number: anytype, n: comptime_int, v: u1) @TypeOf(number) {
+    // Ensure n is within the bounds of the number's bit width
+    comptime {
+        if (n >= @typeInfo(@TypeOf(number)).int.bits) {
+            @compileError("Bit index 'n' is out of bounds for the given number type.");
+        }
+    }
+
+    const mask = @as(@TypeOf(number), 1) << n;
+
+    if (v == 1) {
+        return @as(@TypeOf(number), (number | mask));
+    } else {
+        return @as(@TypeOf(number), (number & ~mask));
+    }
+}
