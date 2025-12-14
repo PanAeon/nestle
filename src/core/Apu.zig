@@ -170,6 +170,7 @@ const PulseDS = extern struct {
     }
     pub fn setFrequency(pulse: *PulseDS, f: f64) void {
         pulse.freq = f;
+        pulse.advance = calculateAdvance(DEVICE_SAMPLE_RATE, f);
     }
     pub fn setDutyCycle(pulse: *PulseDS, c: f64) void {
         pulse.dutyCycle = c;
@@ -177,7 +178,7 @@ const PulseDS = extern struct {
 
 
     pub fn  waveform_square_f32(time:f64, dutyCycle:f64, amplitude:f32) f32 {
-        const f = time - @as(i64, @intFromFloat(time));
+        const f = time  - std.math.floor(time);//  time - @as(i64, @intFromFloat(time));
         var r: f32 = 0.0;
 
     if (f < dutyCycle) {
@@ -237,7 +238,7 @@ const PulseDS = extern struct {
         if (frames_out) |_| {
             var pFramesOutF32: [*]f32 = @ptrCast(@alignCast(frames_out));
             for (0..frame_count) |i| {
-                pPulse.cycles += numCyclesInFrame;
+                pPulse.cycles +%= numCyclesInFrame;
                 const s = waveform_square_f32(pPulse.time, pPulse.dutyCycle, pPulse.amplitude);
                 pPulse.time += pPulse.advance;
 
@@ -252,12 +253,13 @@ const PulseDS = extern struct {
                 pFramesOutF32[i * 2 + 1] = s;
             }
         } else {
+            pPulse.time += @as(f64, @floatFromInt(frame_count)) * pPulse.advance;
 
-            pPulse.cycles += frame_count * numCyclesInFrame;
-            while (pPulse.cycles > pPulse.noisePeriod) {
-                pPulse.cycles -= pPulse.noisePeriod;
-                pPulse.shift();
-            }
+            pPulse.cycles +%= frame_count * numCyclesInFrame;
+            // while (pPulse.cycles > pPulse.noisePeriod) {
+            //     pPulse.cycles -= pPulse.noisePeriod;
+            //     pPulse.shift();
+            // }
         }
         frames_read.* = frame_count;
         return .success;
@@ -310,8 +312,8 @@ const PulseChannel = struct {
     sweepSetup: SweepSetup = .{},
     timerLow: u8 = 0,
     timerAndLengthCounter: TimerAndLengthCounter = .{},
-    config: zaudio.Pulsewave.Config = undefined,
-    wave: *zaudio.Pulsewave = undefined,
+    // config: zaudio.Pulsewave.Config = undefined,
+    wave: *PulseDS = undefined,
     engine: *zaudio.Engine = undefined,
     sound: *zaudio.Sound = undefined,
     enabled: bool = false,
@@ -322,10 +324,11 @@ const PulseChannel = struct {
     volumeCounter: u8 = 0,
     envelopeVolume: u8 = 0,
 
-    pub fn create(audio: *AudioState) !PulseChannel {
+    pub fn create(audio: *AudioState, gpa: std.mem.Allocator) !PulseChannel {
         var channel: PulseChannel = .{};
-        channel.config = zaudio.Pulsewave.Config.init(.float32, audio.engine.asNodeGraph().getChannels(), audio.engine.getSampleRate(), 0.8, 0.0, 440);
-        channel.wave = try zaudio.Pulsewave.create(channel.config);
+        // channel.config = zaudio.Pulsewave.Config.init(.float32, audio.engine.asNodeGraph().getChannels(), audio.engine.getSampleRate(), 0.8, 0.0, 440);
+        channel.wave = try PulseDS.create(gpa, 0.0, 440.0, 0.15);
+        // channel.wave = try zaudio.Pulsewave.create(channel.config);
         channel.engine = audio.engine;
 
         channel.sound = try audio.engine.createSoundFromDataSource(channel.wave.asDataSourceMut(), .{}, null);
@@ -334,8 +337,8 @@ const PulseChannel = struct {
 
         return channel;
     }
-    pub fn destroy(self: *PulseChannel) void {
-        self.wave.destroy();
+    pub fn destroy(self: *PulseChannel, gpa: std.mem.Allocator) void {
+        self.wave.destroy(gpa);
         self.sound.destroy();
     }
     pub fn enable(self: *PulseChannel, on: bool) !void {
@@ -356,7 +359,7 @@ const PulseChannel = struct {
         self.dutyCycleAndVolume = d;
         self.volumeCounter = d.volume;
         self.envelopeVolume = 15;
-        var amplitude = @as(f64, @floatFromInt(d.volume)) / 16.0;
+        var amplitude = @as(f32, @floatFromInt(d.volume)) / 16.0;
         if (!self.dutyCycleAndVolume.constantVolume) {
             amplitude = 1.0;
         }
@@ -369,12 +372,8 @@ const PulseChannel = struct {
             2 => 0.5,
             3 => 0.25,
         };
-        self.wave.setAmplitude(amplitude) catch {
-            std.debug.print("can't set ampl\n", .{});
-        };
-        self.wave.setDutyCycle(duty) catch {
-            std.debug.print("can't set ampl\n", .{});
-        };
+        self.wave.setAmplitude(amplitude); 
+        self.wave.setDutyCycle(duty);
         if (!self.dutyCycleAndVolume.constantVolume) {
             // self.wave.setAmplitude(1.0) catch { std.debug.print("can't set ampl\n", .{});};
             self.sound.setFadeInMilliseconds(-1.0, 0.0, 8 * (@as(u64, self.dutyCycleAndVolume.volume) + 1));
@@ -386,9 +385,7 @@ const PulseChannel = struct {
         self.rawTimerPeriod = t;
         // FIXME: if t < 8 mute
         const frequency = fCPU / (16.0 * (@as(f64, @floatFromInt(t)) + 1.0));
-        self.wave.setFrequency(frequency) catch {
-            std.debug.print("can't set freq\n", .{});
-        };
+        self.wave.setFrequency(frequency);
     }
     // Writing to $4003/$4007 reloads the length counter, restarts the envelope, and resets the phase of the pulse generator.
     pub fn setTimerHigh(self: *PulseChannel, _timerHigh: TimerAndLengthCounter) !void {
@@ -396,7 +393,7 @@ const PulseChannel = struct {
         const t: u11 = self.timerLow + (@as(u11, self.timerAndLengthCounter.timerHigh) << 8);
         // FIXME: if t < 8 mute
         const frequency = fCPU / (16.0 * (@as(f64, @floatFromInt(t)) + 1.0));
-        try self.wave.setFrequency(frequency);
+        self.wave.setFrequency(frequency);
         try self.sound.start();
         if (_timerHigh.lengthCounterLoad == 0) {
             const endTime = self.engine.asNodeGraph().getTime() +
@@ -949,8 +946,8 @@ pub fn init(gpa: std.mem.Allocator) !Apu {
     apu.audio = try AudioState.create(gpa);
 
     try apu.audio.engine.start();
-    apu.pulse1Channel = try PulseChannel.create(apu.audio);
-    apu.pulse2Channel = try PulseChannel.create(apu.audio);
+    apu.pulse1Channel = try PulseChannel.create(apu.audio, gpa);
+    apu.pulse2Channel = try PulseChannel.create(apu.audio, gpa);
     apu.triangleChannel = try TriangleChannel.create(apu.audio);
     apu.noiseChannel = try NoiseChannel.create(apu.audio, gpa);
     apu.dmcChannel = try DMCChannel.create(apu.audio);
@@ -974,8 +971,8 @@ pub fn init(gpa: std.mem.Allocator) !Apu {
 }
 
 pub fn deinit(self: *Apu, gpa: std.mem.Allocator) void {
-    self.pulse1Channel.destroy();
-    self.pulse2Channel.destroy();
+    self.pulse1Channel.destroy(gpa);
+    self.pulse2Channel.destroy(gpa);
     self.triangleChannel.destroy();
     self.noiseChannel.destroy(gpa);
     self.dmcChannel.destroy();
