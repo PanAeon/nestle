@@ -21,12 +21,12 @@ cpu: Cpu,
 pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
      // var f = try std.fs.openFileAbsolute("/foo/snes/7-dmc_basics.nes", .{});
       // var f = try std.fs.openFileAbsolute("/foo/snes/Metroid (USA).nes", .{});
-     // var f = try std.fs.openFileAbsolute("/foo/snes/zelda.nes", .{});
+     var f = try std.fs.openFileAbsolute("/foo/snes/zelda.nes", .{});
       // var f = try std.fs.openFileAbsolute("/foo/snes/Teenage Mutant Ninja Turtles (USA).nes", .{});
      // var f = try std.fs.openFileAbsolute("/foo/snes/Contra (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Chip 'n Dale - Rescue Rangers (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/DuckTales (USA).nes", .{});
-    var f = try std.fs.openFileAbsolute("/foo/snes/Castlevania.USA.nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/Castlevania.USA.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Mega Man (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Commando (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/BattleCity (Japan).nes", .{});

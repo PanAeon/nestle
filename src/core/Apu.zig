@@ -6,6 +6,8 @@ const MemoryController = @import("MemoryController.zig");
 
 const Apu = @This();
 const fCPU: f64 = 1.789773 * 1000_000.0; // NTSC
+const uCPU: u64 = 1789773;
+
 const LengthTable: [32]u8 = .{
     // |  0   1   2   3   4   5   6   7    8   9   A   B   C   D   E   F
     // +----------------------------------------------------------------
@@ -13,12 +15,18 @@ const LengthTable: [32]u8 = .{
     12, 16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30, // 10-1F
 };
 const RateInCpuCycles = [_]f64{ 428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54 };
-const LengthTimer = struct {};
+    const SweepSetup = packed struct(u8) {
+        shiftCount: u3 = 0,
+        negative: bool = false,
+        period: u3 = 0,
+        enabled: bool = false,
+    };
 
 // how many cpu cycles before shift register clocks
 const NoisePeriod = [_]u32{ 4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068 };
 
 const numCyclesInFrame: u64 = @intFromFloat(fCPU / DEVICE_SAMPLE_RATE);
+const halfFrameInPCMFrames = 8.0 * DEVICE_SAMPLE_RATE / 1000.0;
 pub const standard_channel_map = enum(u32) {
     ma_standard_channel_map_microsoft,
     ma_standard_channel_map_alsa,
@@ -159,21 +167,36 @@ const NoiseDS = extern struct {
 const PulseDS = extern struct {
     ds: zaudio.DataSourceBase = std.mem.zeroes(zaudio.DataSourceBase),
     cycles: u64 = 0,
-    amplitude: f32 = 1.0,
     freq: f64 = 0.0,
     dutyCycle:f64 = 0.0,
     time: f64 = 0,
     advance: f64 = 0,
+    amplitude: f32 = 1.0,
+    timer : u16 = 0, // actually u11?
+    sweepSetup: SweepSetup = .{},
+    sweepPeriod: u64 = 0,
 
     pub fn setAmplitude(pulse: *PulseDS, a: f32) void {
         pulse.amplitude = a;
     }
-    pub fn setFrequency(pulse: *PulseDS, f: f64) void {
-        pulse.freq = f;
-        pulse.advance = calculateAdvance(DEVICE_SAMPLE_RATE, f);
+    pub fn setTimer(pulse: *PulseDS, timer: u11) void {
+        pulse.timer = timer;
+        // FIXME: if t < 8 mute
+        const frequency = fCPU / (16.0 * (@as(f64, @floatFromInt(timer)) + 1.0));
+        pulse._setFrequency(frequency);
+    }
+    pub fn _setFrequency(pulse: *PulseDS, f: f64) void {
+         pulse.freq = f;
+         pulse.advance = calculateAdvance(DEVICE_SAMPLE_RATE, f);
     }
     pub fn setDutyCycle(pulse: *PulseDS, c: f64) void {
         pulse.dutyCycle = c;
+    }
+
+    pub fn setSweep(pulse: *PulseDS, sweep: SweepSetup) void {
+        pulse.sweepSetup = sweep;
+        pulse.sweepPeriod = (@as(u64, sweep.period) + 1) * (uCPU / 2);
+        // pulse.sweepPeriod = @as(f64, @floatFromInt(@as(u16, sweep.period) + 1)) * halfFrameInPCMFrames;
     }
 
 
@@ -198,12 +221,14 @@ const PulseDS = extern struct {
     //     return (1.0 / (DEVICE_SAMPLE_RATE / freq));
     // }
 
-    pub fn create(allocator: std.mem.Allocator,a: f32, freq: f64, duty: f64) zaudio.Error!*PulseDS {
+    pub fn create(allocator: std.mem.Allocator,a: f32, timer: u11, duty: f64, sweepSetup: SweepSetup) zaudio.Error!*PulseDS {
         var pulse = try allocator.create(PulseDS);
         pulse.cycles = 0;
         // noise.dummyField = 1488;
         pulse.time = 0.0;
-        pulse.advance = calculateAdvance(DEVICE_SAMPLE_RATE, freq);
+        pulse.setTimer(timer);
+        pulse.setSweep(sweepSetup);
+        // pulse.advance = calculateAdvance(DEVICE_SAMPLE_RATE, pulse.freq);
         pulse.dutyCycle = duty;
         pulse.amplitude = a;
         var dsConfig = zaudio.DataSource.Config.init();
@@ -242,10 +267,14 @@ const PulseDS = extern struct {
                 const s = waveform_square_f32(pPulse.time, pPulse.dutyCycle, pPulse.amplitude);
                 pPulse.time += pPulse.advance;
 
-                // while (pPulse.cycles > pPulse.noisePeriod) {
-                //     pPulse.cycles -= pPulse.noisePeriod;
-                //     pPulse.shift();
-                // }
+                if (pPulse.sweepSetup.enabled and (pPulse.sweepSetup.shiftCount > 0) and pPulse.cycles > pPulse.sweepPeriod) {
+                    pPulse.cycles -= pPulse.sweepPeriod;
+                    const t1 = pPulse.timer >> pPulse.sweepSetup.shiftCount;
+                    const new_timer =  if (pPulse.sweepSetup.negative) pPulse.timer-%t1 else pPulse.timer+%t1;
+                    pPulse.setTimer(@truncate(new_timer));
+    //             // FIXME: clamp to 0.. 
+    //             // FIXME: if t < 8 mute
+                }
                 // const b: u1 = getBit(pPulse.shiftRegister, 0);
                 // const s: f32 = if (b == 0) pPulse.amplitude else 0.0;
 
@@ -291,18 +320,13 @@ const PulseDS = extern struct {
     }
 };
 
+
 const PulseChannel = struct {
     const DutyCycleAndVolume = packed struct {
         volume: u4 = 0, // envelope period
         constantVolume: bool = false,
         lengthCounterHalt: bool = false, // loop envelope
         duty: u2 = 0,
-    };
-    const SweepSetup = packed struct {
-        shiftCount: u3 = 0,
-        negative: bool = false,
-        period: u3 = 0,
-        enabled: bool = false,
     };
     const TimerAndLengthCounter = packed struct {
         timerHigh: u3 = 0,
@@ -319,16 +343,13 @@ const PulseChannel = struct {
     enabled: bool = false,
     muted: bool = false,
     length: u8 = 0,
-    sweepPeriod: u3 = 0,
     rawTimerPeriod: u11 = 0,
     volumeCounter: u8 = 0,
     envelopeVolume: u8 = 0,
 
     pub fn create(audio: *AudioState, gpa: std.mem.Allocator) !PulseChannel {
         var channel: PulseChannel = .{};
-        // channel.config = zaudio.Pulsewave.Config.init(.float32, audio.engine.asNodeGraph().getChannels(), audio.engine.getSampleRate(), 0.8, 0.0, 440);
-        channel.wave = try PulseDS.create(gpa, 0.0, 440.0, 0.15);
-        // channel.wave = try zaudio.Pulsewave.create(channel.config);
+        channel.wave = try PulseDS.create(gpa, 0.0, 100, 0.15, channel.sweepSetup);
         channel.engine = audio.engine;
 
         channel.sound = try audio.engine.createSoundFromDataSource(channel.wave.asDataSourceMut(), .{}, null);
@@ -383,17 +404,13 @@ const PulseChannel = struct {
         self.timerLow = _timerLow;
         const t: u11 = _timerLow + (@as(u11, self.timerAndLengthCounter.timerHigh) << 8);
         self.rawTimerPeriod = t;
-        // FIXME: if t < 8 mute
-        const frequency = fCPU / (16.0 * (@as(f64, @floatFromInt(t)) + 1.0));
-        self.wave.setFrequency(frequency);
+        self.wave.setTimer(t);
     }
     // Writing to $4003/$4007 reloads the length counter, restarts the envelope, and resets the phase of the pulse generator.
     pub fn setTimerHigh(self: *PulseChannel, _timerHigh: TimerAndLengthCounter) !void {
         self.timerAndLengthCounter = _timerHigh;
         const t: u11 = self.timerLow + (@as(u11, self.timerAndLengthCounter.timerHigh) << 8);
-        // FIXME: if t < 8 mute
-        const frequency = fCPU / (16.0 * (@as(f64, @floatFromInt(t)) + 1.0));
-        self.wave.setFrequency(frequency);
+        self.wave.setTimer(t);
         try self.sound.start();
         if (_timerHigh.lengthCounterLoad == 0) {
             const endTime = self.engine.asNodeGraph().getTime() +
@@ -411,55 +428,13 @@ const PulseChannel = struct {
             self.sound.setLooping(false);
         }
     }
-    // pub fn clockLength(self: *PulseChannel) void {
-    //     if (!self.dutyCycleAndVolume.lengthCounterHalt and self.length > 0) {
-    //         self.length -= 1;
-    //     }
-    //     if (self.length == 0) {
-    //         self.wave.setAmplitude(0) catch { std.debug.print("can't setAmplitude\n", .{});};
-    //     }
-    //     // now sweep unit... https://www.nesdev.org/wiki/APU_Sweep
-    //     // TODO: different sweep algorithm for two pulses..
-    //     if (self.sweepSetup.enabled and self.sweepSetup.shiftCount > 0) {
-    //         if (self.sweepPeriod == 0) {
-    //             self.sweepPeriod = self.sweepSetup.period;
-    //             const t:u11 = self.timerLow + (@as(u11,self.timerAndLengthCounter.timerHigh) << 8);
-    //             const t1 = t >> self.sweepSetup.shiftCount;
-    //             self.rawTimerPeriod =  if (self.sweepSetup.negative) self.rawTimerPeriod-%t1 else self.rawTimerPeriod+%t1;
-    //             // FIXME: clamp to 0.. targetPeriod
-    //             // FIXME: if t < 8 mute
-    //             const frequency =  fCPU / (16.0 * (@as(f64, @floatFromInt(self.rawTimerPeriod)) + 1.0));
-    //             self.wave.setFrequency(frequency) catch { std.debug.print("can't set freq\n", .{});};
-    //         } else {
-    //             self.sweepPeriod -= 1;
-    //         }
-    //     }
-    //
-    // }
-    // pub fn clockVolumeEnvelope(self: *PulseChannel) void {
-    //     if (!self.dutyCycleAndVolume.constantVolume) {
-    //         if (self.volumeCounter == 0) {
-    //             self.volumeCounter = self.dutyCycleAndVolume.volume;
-    //             if (self.envelopeVolume == 0 and self.dutyCycleAndVolume.lengthCounterHalt) {
-    //                 self.envelopeVolume = 15;
-    //             } else if (self.envelopeVolume > 0) {
-    //                 self.envelopeVolume -= 1;
-    //             }
-    //             if (self.envelopeVolume > 0) {
-    //                  // FIXME: negative volume on inverted period..
-    //                  const amplitude = @as(f64, @floatFromInt(self.envelopeVolume)) / 16.0;
-    //                  self.wave.setAmplitude(amplitude) catch { std.debug.print("can't set ampl\n", .{});};
-    //             }
-    //         } else {
-    //             self.volumeCounter -=1;
-    //         }
-    //     }
-    // }
 
     pub fn setSweep(self: *PulseChannel, sweep: SweepSetup) void {
         self.sweepSetup = sweep;
-        self.sweepPeriod = sweep.period;
-        // self.sound.setPitch(pitch: f32)
+        // if (sweep.enabled) {
+        //     std.debug.print("sweep: {any}\n", .{sweep});
+        // }
+        self.wave.sweepSetup = sweep;
     }
 };
 
@@ -723,7 +698,7 @@ const DMCChannel = struct {
         } else {
             if (on) {
                 self.enabled = true;
-                std.debug.print("DMC on 0x{x} 0x{x} 0x{x} 0x{x}\n", .{ self.sampleAddress, self.sampleLength, self.frequency.rateIndex, self.directLoad.directLoad });
+                // std.debug.print("DMC on 0x{x} 0x{x} 0x{x} 0x{x}\n", .{ self.sampleAddress, self.sampleLength, self.frequency.rateIndex, self.directLoad.directLoad });
 
                 self.buffer.destroy();
                 self.buffer = try zaudio.AudioBuffer.create(self.config);
@@ -749,7 +724,7 @@ const DMCChannel = struct {
                 // };
                 // try self.node.asNodeMut().setState(.started);
             } else {
-                std.debug.print("DMC off:\n", .{});
+                // std.debug.print("DMC off:\n", .{});
                 self.enabled = false;
 
                 try self.sound.stop();
