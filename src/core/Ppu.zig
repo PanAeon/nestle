@@ -127,6 +127,7 @@ scanlineSpriteBuffer: [256]SpriteData = std.mem.zeroes([256]SpriteData),
 
 cpu: *Cpu = undefined,
 memoryController: *MemoryController = undefined,
+ppuReadBuff: u8 = 0,
 
 // The PPU outputs a picture region of 256x240 pixels and a border region extending 16 pixels left, 
 // 11 pixels right, and 2 pixels down (283x242)
@@ -416,6 +417,7 @@ pub fn run(self: *Ppu) void {
                 if (self.ppuCtrl.VBlankNMIEnable) {
                     self.cpu.nmi();
                 }
+                self.ppuStatus.VBlank = true;
             }
             // The PPU makes no memory accesses during these scanlines
         },
@@ -468,11 +470,15 @@ pub fn read(self: *Ppu, addr: u16) u8 {
         0x2005 => return 0, // Wx2
         0x2006 => return 0, // Wx2
         0x2007 => {
-            var v: u15 = @bitCast(self.v);
-            const res = self.ppu_read(v);
+            // var v: u15 = @bitCast(self.v);
+            // const res = self.ppu_read(v);
+            // const incr = self.ppuCtrl.vramAddressIncrement;
+            // v +%= (~incr + (incr * @as(u15, 32)));
+            // self.v = @bitCast(v);
+            const res = self.ppuReadBuff;
+            self.ppuReadBuff = self.ppu_read(self.t1); // FIXME: read buffer
             const incr = self.ppuCtrl.vramAddressIncrement;
-            v +%= (~incr + (incr * @as(u15, 32)));
-            self.v = @bitCast(v);
+            self.t1 +%= (~incr + (incr * @as(u15, 32)));
             return res;
         }, // R/W Vram data
         else => std.debug.panic("wrong address 0x{x} for PPU", .{addr}),
@@ -482,8 +488,9 @@ pub fn read(self: *Ppu, addr: u16) u8 {
 pub fn write(self: *Ppu, addr: u16, data: u8) void {
     switch (addr) {
         0x2000 => {
+            const prevStatus = self.ppuCtrl.VBlankNMIEnable;
             self.ppuCtrl = @bitCast(data);
-            if (self.ppuCtrl.VBlankNMIEnable and self.ppuStatus.VBlank) {
+            if (!prevStatus and self.ppuCtrl.VBlankNMIEnable and self.ppuStatus.VBlank) {
                 self.cpu.nmi();
             }
             self.t.horizontalNametable = @truncate(self.ppuCtrl.baseNametableAddress);
@@ -512,30 +519,30 @@ pub fn write(self: *Ppu, addr: u16, data: u8) void {
         0x2006 => { // PPUAddr
             if (self.writeToggle == 0) { // FIXME: t or v?
                 // high byte first
-                var t: u15 = @bitCast(self.t);
-                t = (t & 0x00FF) | (@as(u15, data) << 8) & 0x3fff;
-                self.t = @bitCast(t);
-                // self.t1 = (self.t1 & 0x00FF) | (@as(u15, data) << 8) & 0x3fff;
+                // var t: u15 = @bitCast(self.t);
+                // t = (t & 0x00FF) | (@as(u15, data) << 8) & 0x3fff;
+                // self.t = @bitCast(t);
+                self.t1 = (self.t1 & 0x00FF) | (@as(u15, data) << 8) & 0x3fff;
             } else {
-                var t: u15 = @bitCast(self.t);
-                t = t & (0x7F00) | @as(u15, data);
-                self.t = @bitCast(t);
-                // self.t1 = self.t1 & (0x7F00) | @as(u15, data);
+                // var t: u15 = @bitCast(self.t);
+                // t = t & (0x7F00) | @as(u15, data);
+                // self.t = @bitCast(t);
+                self.t1 = self.t1 & (0x7F00) | @as(u15, data);
             }
             self.writeToggle +%= 1;
         }, // Wx2
         0x2007 => { //PPUDATA - VRAM data
-            var t: u15 = @bitCast(self.t);
-            self.ppu_write(@truncate(t), data);
-            const incr = self.ppuCtrl.vramAddressIncrement;
-            t +%= (~incr + (incr * @as(u15, 32)));
-            self.t = @bitCast(t);
-            if (self.t1 >= 0x1140 and self.t1 < 0x1148) {
-                std.debug.print("0x114x data: 0x{x}\n", .{data});
-            }
-            // self.ppu_write(self.t1, data);
+            // var t: u15 = @bitCast(self.t);
+            // self.ppu_write(@truncate(t), data);
             // const incr = self.ppuCtrl.vramAddressIncrement;
-            // self.t1 +%= (~incr + (incr * @as(u15, 32)));
+            // t +%= (~incr + (incr * @as(u15, 32)));
+            // self.t = @bitCast(t);
+            // if (self.t1 >= 0x1140 and self.t1 < 0x1148) {
+            //     std.debug.print("0x114x data: 0x{x}\n", .{data});
+            // }
+            self.ppu_write(@truncate(self.t1), data);
+            const incr = self.ppuCtrl.vramAddressIncrement;
+            self.t1 +%= (~incr + (incr * @as(u15, 32)));
         },
         else => std.debug.panic("wrong address 0x{x} for PPU", .{addr}),
     }

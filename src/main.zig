@@ -300,6 +300,9 @@ pub fn init() !void {
         glfw.pollEvents();
         const fb_size = window.getFramebufferSize();
         _ = &fb_size;
+        if (window.getKey(.space) == .press) {
+            emulator.printCPUCore();
+        }
         // const jj = try glfw.joystickAsGamepad(joystick).?.getState();
 
         const buttons = try glfw.getJoystickButtons(joystick);

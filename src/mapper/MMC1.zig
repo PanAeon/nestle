@@ -287,9 +287,10 @@ pub fn ppu_write(ptr: *anyopaque, addr: u14, data: u8) void {
         },
     },
     else => {
-        const _addr = addr - 0x1000;
-        ppu_write(ptr, _addr, data);
-    }, //std.debug.panic("ppu write: wrong address for mapper: 0x{x}", .{addr}),
+        std.debug.panic("ppu write: wrong address for mapper: 0x{x}", .{addr});
+        // const _addr = addr - 0x2400;
+        // ppu_write(ptr, _addr, data);
+    }, 
     }
 }
 

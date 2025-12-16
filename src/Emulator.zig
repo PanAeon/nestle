@@ -18,13 +18,14 @@ ppu: Ppu,
 controller: Controller,
 memoryController: MemoryController,
 cpu: Cpu,
+printCore: bool,
 pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
     // var f = try std.fs.openFileAbsolute("/foo/snes/Castlevania.USA.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Darkwing Duck (USA).nes", .{});
      // var f = try std.fs.openFileAbsolute("/foo/snes/7-dmc_basics.nes", .{});
-      var f = try std.fs.openFileAbsolute("/foo/snes/Metroid (USA).nes", .{});
+      // var f = try std.fs.openFileAbsolute("/foo/snes/Metroid (USA).nes", .{});
      // var f = try std.fs.openFileAbsolute("/foo/snes/zelda.nes", .{});
-      // var f = try std.fs.openFileAbsolute("/foo/snes/Teenage Mutant Ninja Turtles (USA).nes", .{});
+      var f = try std.fs.openFileAbsolute("/foo/snes/Teenage Mutant Ninja Turtles (USA).nes", .{});
      // var f = try std.fs.openFileAbsolute("/foo/snes/Contra (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Chip 'n Dale - Rescue Rangers (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/DuckTales (USA).nes", .{});
@@ -52,9 +53,11 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
         .controller = undefined,
         .memoryController = undefined,
         .cpu = undefined,
+        .printCore = false
     };
     const romInfo = try ines.readRom(gpa, &f, &emu.vram);
     emu.mapper = romInfo.mapper;
+    emu.printCore = false;
 
     emu.apu = try Apu.init(gpa);
     emu.ppu = Ppu.init(emu.mapper, outputBuffer);
@@ -124,6 +127,21 @@ pub fn run_one_frame(self: *Emulator) void {
     var ppuBudget: usize = 0;
     self.ppu.startNewFrame();
     while (cycles < CyclesPerFrame) {
+        // self.ppu.sprites[0].attrs.behindBackground = true;
+        // self.ppu.sprites[0].tileIdx = 0;
+        if (self.printCore) {
+            std.debug.print("------------\n", .{});
+            self.cpu.print();
+            self.printCore = false;
+            var instr = self.cpu.decode2(self.cpu.PC);
+            _ = self.cpu.interpret(instr);
+            self.cpu.print();
+            instr = self.cpu.decode2(self.cpu.PC);
+            _ = self.cpu.interpret(instr);
+            self.cpu.print();
+            std.debug.print("first sprite: {any}\n", .{self.ppu.sprites[0]});
+            std.debug.print("------------\n", .{});
+        }
         const instr = self.cpu.decode2(self.cpu.PC);
         const c = self.cpu.interpret(instr);
         cycles += c;
@@ -267,4 +285,7 @@ pub fn run_until(self: *Emulator, pc: u16) usize {
         }
         totalCycles += cycles;
     }
+}
+pub fn printCPUCore(self: *Emulator) void {
+    self.printCore = true;
 }

@@ -28,7 +28,9 @@ pub fn print(self: *Cpu) void {
         \\flags: {d}{d}{d}{d}{d}{d}{d}{d}
         \\       NV-BDIZC
         \\
-    , .{ self.A, self.X, self.Y, self.PC, self.S, self.SP, self.P.Negative, self.P.Overflow, self.P.@"-", self.P.B, self.P.Decimal, self.P.InterrupDisable, self.P.Zero, self.P.Carry });
+    , .{ self.A, self.X, self.Y, self.PC, self.S, self.SP, 
+        self.P.Negative, self.P.Overflow, self.P.@"-", 
+        self.P.B, self.P.Decimal, @as(u8, @intFromBool(self.P.InterrupDisable)), self.P.Zero, self.P.Carry });
 }
 
 // STACK: $0100-$01FF, grows left
