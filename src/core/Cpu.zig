@@ -554,8 +554,12 @@ pub fn setBit(number: anytype, n: comptime_int, v: u1) @TypeOf(number) {
         return @as(@TypeOf(number), (number & ~mask));
     }
 }
-pub fn interpret(self: *Cpu, instr: DecodedInstruction) u8 {
-    var cycles: u8 = instr.numCycles;
+pub fn interpret(self: *Cpu, instr: DecodedInstruction) u32 {
+    var cycles: u32 = instr.numCycles;
+    if (self.dmaDone) {
+        self.dmaDone = false;
+        cycles += 514;
+    }
     self.PC += instr.numBytes;
     switch (instr.name) {
         .ADC => {

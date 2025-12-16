@@ -19,21 +19,21 @@ controller: Controller,
 memoryController: MemoryController,
 cpu: Cpu,
 pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
+    // var f = try std.fs.openFileAbsolute("/foo/snes/Castlevania.USA.nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/Darkwing Duck (USA).nes", .{});
      // var f = try std.fs.openFileAbsolute("/foo/snes/7-dmc_basics.nes", .{});
-      // var f = try std.fs.openFileAbsolute("/foo/snes/Metroid (USA).nes", .{});
-     var f = try std.fs.openFileAbsolute("/foo/snes/zelda.nes", .{});
+      var f = try std.fs.openFileAbsolute("/foo/snes/Metroid (USA).nes", .{});
+     // var f = try std.fs.openFileAbsolute("/foo/snes/zelda.nes", .{});
       // var f = try std.fs.openFileAbsolute("/foo/snes/Teenage Mutant Ninja Turtles (USA).nes", .{});
      // var f = try std.fs.openFileAbsolute("/foo/snes/Contra (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Chip 'n Dale - Rescue Rangers (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/DuckTales (USA).nes", .{});
-    // var f = try std.fs.openFileAbsolute("/foo/snes/Castlevania.USA.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Mega Man (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Commando (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/BattleCity (Japan).nes", .{});
      // var f = try std.fs.openFileAbsolute("/foo/snes/Balloon Fight (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Metal Gear (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Jurassic Park (USA).nes", .{});
-    // var f = try std.fs.openFileAbsolute("/foo/snes/All Night Nippon Super Mario Bros. (J) (FDS Conversion).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/thwaite.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Super Mario Bros. (World).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/nestest.nes", .{});
@@ -41,6 +41,7 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
     // var f = try std.fs.openFileAbsolute("/foo/snes/controller.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Total.Recall.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/testroms/palette_fill.nes", .{});
+      // var f = try std.fs.openFileAbsolute("/foo/snes/Power Blade 2 (USA).nes", .{});
     defer f.close();
     // _ = try nestle.ines.hasMagicByte(&f);
     emu.* = Emulator{
@@ -68,6 +69,7 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
     emu.cpu.PC = low + (high * 256);
     emu.cpu.SP = 0xFD;
     emu.cpu.P.InterrupDisable = true; // ???
+    emu.warmup();
     // std.debug.print("current bank: {d}", emu.mapper
 
     // return emu;
@@ -93,6 +95,46 @@ pub fn deinit(self: *Emulator, gpa: std.mem.Allocator) void {
 pub fn setJoystickState(self: *Emulator, state: Controller.JoystickState) void {
     self.controller.joystick1 = state;
     // self.controller.joystick2 = state;
+}
+pub fn warmup(self: *Emulator) void {
+    const Cycles: usize = 29658;
+
+    var cycles: usize = 0;
+    while (cycles < Cycles) {
+        const instr = self.cpu.decode2(self.cpu.PC);
+        const c = self.cpu.interpret(instr);
+        cycles += c;
+    }
+}
+pub fn run_one_frame(self: *Emulator) void {
+    const CpuFreq: f32 = 1789773.0; // 1.789 Mhz
+    const FrameRate: f32 = 60.0;
+    const CyclesPerFrame: usize = @intFromFloat(CpuFreq / FrameRate);
+    // const CyclesPerFrameActive: usize = CyclesPerFrame * 240 / 262;
+    // const CyclesPerFrameBlank: usize = CyclesPerFrame - CyclesPerFrameActive;
+    // const CpuAvgCycle: f32 = 3.0;
+    // const CpuInstrperFrame : usize = @as(usize, CyclesPerFrame / CpuAvgCycle);
+    // const CpuInstrPerFrameActive: usize = CpuInstrperFrame * 240 / 262;
+    // const CpuInstrPerFrameBlank: usize = CpuInstrperFrame - CpuInstrPerFrameActive;
+
+    // if (!self.cpu.P.InterrupDisable) {
+    //     self.cpu.irq(); // hmm
+    // }
+    var cycles: usize = 0;
+    var ppuBudget: usize = 0;
+    self.ppu.startNewFrame();
+    while (cycles < CyclesPerFrame) {
+        const instr = self.cpu.decode2(self.cpu.PC);
+        const c = self.cpu.interpret(instr);
+        cycles += c;
+        ppuBudget += 3*c;
+        while (ppuBudget > 0) {
+            self.ppu.run();
+            ppuBudget -= 1;
+        }
+    }
+    // self.apu.clock(10);
+    // std.debug.print("elapsed: {d} cycles\n", .{cycles});
 }
 pub fn run_cpu_test(self: *Emulator) !void {
     var f = try std.fs.openFileAbsolute("/foo/snes/nestest.log", .{});
@@ -153,7 +195,7 @@ pub fn run_cpu_test(self: *Emulator) !void {
     std.debug.print("done, num cycles on 5004: {d}\n", .{cycles});
 }
 
-pub fn run_one_frame(self: *Emulator) void {
+pub fn run_one_frame_old_good_one(self: *Emulator) void {
     const CpuFreq: f32 = 1789773.0; // 1.789 Mhz
     const FrameRate: f32 = 60.0;
     const CyclesPerFrame: usize = @intFromFloat(CpuFreq / FrameRate);

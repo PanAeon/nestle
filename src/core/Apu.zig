@@ -3,6 +3,7 @@ const std = @import("std");
 const zaudio = @import("zaudio");
 const DEVICE_FORMAT = zaudio.Format.float32;
 const MemoryController = @import("MemoryController.zig");
+const NesMixerNode = @import("audio/NesMixerNode.zig");
 
 const Apu = @This();
 const fCPU: f64 = 1.789773 * 1000_000.0; // NTSC
@@ -113,12 +114,13 @@ const NoiseDS = extern struct {
 
     pub fn onRead(ds: *zaudio.DataSource, frames_out: ?*anyopaque, frame_count: u64, frames_read: *u64) callconv(.c) zaudio.Result {
         var pNoise: *NoiseDS = @ptrCast(@alignCast(ds));
+        const noisePeriod = pNoise.noisePeriod;
         if (frames_out) |_| {
             var pFramesOutF32: [*]f32 = @ptrCast(@alignCast(frames_out));
             for (0..frame_count) |i| {
                 pNoise.cycles += numCyclesInFrame;
-                while (pNoise.cycles > pNoise.noisePeriod) {
-                    pNoise.cycles -= pNoise.noisePeriod;
+                while (pNoise.cycles > noisePeriod) {
+                    pNoise.cycles -= noisePeriod; // FIXME: updating noise period! aah
                     pNoise.shift();
                 }
                 const b: u1 = getBit(pNoise.shiftRegister, 0);
@@ -129,8 +131,8 @@ const NoiseDS = extern struct {
             }
         } else {
             pNoise.cycles += frame_count * numCyclesInFrame;
-            while (pNoise.cycles > pNoise.noisePeriod) {
-                pNoise.cycles -= pNoise.noisePeriod;
+            while (pNoise.cycles > noisePeriod) {
+                pNoise.cycles -= noisePeriod;
                 pNoise.shift();
             }
         }
@@ -181,7 +183,6 @@ const PulseDS = extern struct {
     }
     pub fn setTimer(pulse: *PulseDS, timer: u11) void {
         pulse.timer = timer;
-        // FIXME: if t < 8 mute
         const frequency = fCPU / (16.0 * (@as(f64, @floatFromInt(timer)) + 1.0));
         pulse._setFrequency(frequency);
     }
@@ -270,16 +271,21 @@ const PulseDS = extern struct {
                 if (pPulse.sweepSetup.enabled and (pPulse.sweepSetup.shiftCount > 0) and pPulse.cycles > pPulse.sweepPeriod) {
                     pPulse.cycles -= pPulse.sweepPeriod;
                     const t1 = pPulse.timer >> pPulse.sweepSetup.shiftCount;
-                    const new_timer =  if (pPulse.sweepSetup.negative) pPulse.timer-%t1 else pPulse.timer+%t1;
+                    const neg, const overflow = @subWithOverflow(pPulse.timer,t1); 
+                    const neg1 = (~overflow)*neg;
+                    const new_timer =  if (pPulse.sweepSetup.negative) neg1 else pPulse.timer+%t1;
                     pPulse.setTimer(@truncate(new_timer));
-    //             // FIXME: clamp to 0.. 
-    //             // FIXME: if t < 8 mute
                 }
                 // const b: u1 = getBit(pPulse.shiftRegister, 0);
                 // const s: f32 = if (b == 0) pPulse.amplitude else 0.0;
 
-                pFramesOutF32[i * 2] = s;
-                pFramesOutF32[i * 2 + 1] = s;
+                if (pPulse.timer < 8) {
+                    pFramesOutF32[i * 2] = 0;
+                    pFramesOutF32[i * 2 + 1] = 0;
+                } else {
+                    pFramesOutF32[i * 2] = s;
+                    pFramesOutF32[i * 2 + 1] = s;
+                }
             }
         } else {
             pPulse.time += @as(f64, @floatFromInt(frame_count)) * pPulse.advance;
@@ -347,14 +353,15 @@ const PulseChannel = struct {
     volumeCounter: u8 = 0,
     envelopeVolume: u8 = 0,
 
-    pub fn create(audio: *AudioState, gpa: std.mem.Allocator) !PulseChannel {
+    pub fn create(audio: *AudioState, gpa: std.mem.Allocator, num: u32) !PulseChannel {
         var channel: PulseChannel = .{};
         channel.wave = try PulseDS.create(gpa, 0.0, 100, 0.15, channel.sweepSetup);
         channel.engine = audio.engine;
 
         channel.sound = try audio.engine.createSoundFromDataSource(channel.wave.asDataSourceMut(), .{}, null);
+        try channel.sound.asNodeMut().dettachAllOutputBuses();
 
-        try channel.sound.asNodeMut().attachOutputBus(0, audio.hpf.asNodeMut(), 0);
+        try channel.sound.asNodeMut().attachOutputBus(0, audio.mixer, num);
 
         return channel;
     }
@@ -462,17 +469,12 @@ const TriangleChannel = struct {
     pub fn create(audio: *AudioState) !TriangleChannel {
         var channel: TriangleChannel = .{};
         channel.engine = audio.engine;
-        channel.config = zaudio.Waveform.Config.init(.float32, audio.engine.asNodeGraph().getChannels(), audio.engine.getSampleRate(), .triangle, 0.0, 440);
+        channel.config = zaudio.Waveform.Config.init(
+              .float32, audio.engine.asNodeGraph().getChannels(), audio.engine.getSampleRate(), .triangle, 1.0, 440);
         channel.wave = try zaudio.Waveform.create(channel.config);
 
         channel.sound = try audio.engine.createSoundFromDataSource(channel.wave.asDataSourceMut(), .{}, null);
-        // channel.node = try audio.engine.asNodeGraphMut().createDataSourceNode(
-        //     zaudio.DataSourceNode.Config.init(channel.wave.asDataSourceMut()),
-        // );
-        // const node = audio.engine.asNodeGraphMut().getEndpointMut();
-        try channel.sound.asNodeMut().attachOutputBus(0, audio.hpf.asNodeMut(), 0);
-        //
-        // try channel.node.asNodeMut().setState(.stopped);
+        try channel.sound.asNodeMut().attachOutputBus(0, audio.mixer, 2);
         return channel;
     }
     pub fn destroy(self: *TriangleChannel) void {
@@ -492,27 +494,25 @@ const TriangleChannel = struct {
             }
         }
     }
-    pub fn setLinearCounter(self: *TriangleChannel, _counter: LinearCounter) void {
+    pub fn setLinearCounter(self: *TriangleChannel, _counter: LinearCounter) !void {
         self.linearCounter = _counter;
         self.linearTimer = _counter.linearCounterReloadValue;
-        // self.node.asNodeMut().setState(.started) catch {
-        //     std.debug.print("can't set freq\n", .{});
-        // };
-        // const endTime = self.engine.asNodeGraph().getTime() +
-        //     (@as(u64, self.linearCounter.linearCounterReloadValue) * 16 *
-        //         self.engine.getSampleRate() / 1000);
-        // // self.node.asNodeMut().setStateTime(.stopped, endTime) catch {
-        //     std.debug.print("can't set freq\n", .{});
-        // };
+        try self.sound.asNodeMut().setState(.started); 
+        const endTime = self.engine.asNodeGraph().getTime() +
+            (@as(u64, self.linearCounter.linearCounterReloadValue) * 16 *
+                self.engine.getSampleRate() / 1000);
+        try self.sound.asNodeMut().setStateTime(.stopped, endTime);
     }
-    pub fn setTimerLow(self: *TriangleChannel, _timerLow: u8) void {
+    pub fn setTimerLow(self: *TriangleChannel, _timerLow: u8) !void {
         self.timerLow = _timerLow;
         self.rawTimerPeriod = _timerLow + (@as(u11, self.timerAndLengthCounter.timerHigh) << 8);
-        // FIXME: if t < 8 mute
         const frequency = fCPU / (32.0 * (@as(f64, @floatFromInt(self.rawTimerPeriod)) + 1.0));
-        self.wave.setFrequency(frequency) catch {
-            std.debug.print("can't set freq\n", .{});
-        };
+        try self.wave.setFrequency(frequency);
+        if (self.rawTimerPeriod < 8) {
+           try self.sound.stop();
+        } else {
+           try self.sound.start();
+        }
     }
     // Writing to $4003/$4007 reloads the length counter, restarts the envelope, and resets the phase of the pulse generator.
     pub fn setTimerHigh(self: *TriangleChannel, _timerHigh: TimerAndLengthCounter) !void {
@@ -523,7 +523,11 @@ const TriangleChannel = struct {
         self.wave.setFrequency(frequency) catch {
             std.debug.print("can't set freq\n", .{});
         };
-        try self.sound.start();
+        if (self.rawTimerPeriod < 8) {
+           try self.sound.stop();
+        } else {
+           try self.sound.start();
+        }
         if (_timerHigh.lengthCounterLoad == 0) {
             // one shot
             //  the length counter should be loaded with a time longer than the length of the envelope
@@ -533,41 +537,19 @@ const TriangleChannel = struct {
                 (16 * 16 *
                     self.engine.getSampleRate() / 1000);
             self.sound.setStopTimeInPcmFrames(endTime);
-            self.sound.setLooping(false);
+            // self.sound.setLooping(false);
         } else if (_timerHigh.lengthCounterLoad == 1) {
             // FIXME: infinite play
             self.linearCounter.lengthCounterHalt = true;
-            self.sound.setLooping(true);
+            // self.sound.setLooping(true);
         } else {
-            self.sound.setLooping(false);
+            // self.sound.setLooping(false);
             const endTime = self.engine.asNodeGraph().getTime() +
                 (@as(u64, LengthTable[_timerHigh.lengthCounterLoad]) * 16 *
                     self.engine.getSampleRate() / 1000);
             self.sound.setStopTimeInPcmFrames(endTime);
         }
     }
-    // pub fn clockLength(self: *TriangleChannel) void {
-    //     if (!self.linearCounter.lengthCounterHalt and self.length > 0) {
-    //         self.length -= 1;
-    //     }
-    //     if (self.length == 0) {
-    //         self.wave.setAmplitude(0) catch { std.debug.print("can't setAmplitude\n", .{});};
-    //     }
-    //
-    // }
-    // pub fn clockLinearCounter(self: *TriangleChannel) void {
-    //     if (self.linearCounter.lengthCounterHalt) {
-    //         if (self.linearTimer == 0) {
-    //             self.linearTimer = self.linearCounter.linearCounterReloadValue;
-    //         }
-    //     }
-    //     if (self.linearTimer > 0) {
-    //         self.linearTimer -= 1;
-    //     }
-    //     if (self.linearTimer == 0) {
-    //         self.wave.setAmplitude(0) catch { std.debug.print("can't setAmplitude\n", .{});};
-    //     }
-    // }
 
 };
 // https://www.nesdev.org/wiki/APU_Noise
@@ -603,10 +585,11 @@ const NoiseChannel = struct {
         var channel: NoiseChannel = .{};
         channel.engine = audio.engine;
         channel.wave = try NoiseDS.create(allocator, 0, false, 1.0);
-        std.debug.print("noise address: 0x{*}\n", .{channel.wave});
+        // std.debug.print("noise address: 0x{*}\n", .{channel.wave});
 
         channel.sound = try audio.engine.createSoundFromDataSource(channel.wave.asDataSourceMut(), .{}, null);
-        try channel.sound.asNodeMut().attachOutputBus(0, audio.hpf.asNodeMut(), 0);
+        try channel.sound.asNodeMut().dettachAllOutputBuses();
+        try channel.sound.asNodeMut().attachOutputBus(0, audio.mixer, 3);
         return channel;
     }
     pub fn destroy(self: *NoiseChannel, allocator: std.mem.Allocator) void {
@@ -712,7 +695,7 @@ const DMCChannel = struct {
                 self.sound = try self.audio.engine.createSoundFromDataSource(self.buffer.asDataSourceMut(), .{}, null);
 
                 // const endpoint = self.engine.asNodeGraphMut().getEndpointMut();
-                // try self.sound.asNodeMut().attachOutputBus(0,endpoint, 0);
+                try self.sound.asNodeMut().attachOutputBus(0,self.audio.mixer, 4);
                 // self.sound.setLooping(true);
                 self.sound.setVolume(1.0);
                 // try self.sound.seekToPcmFrame(0);
@@ -736,7 +719,7 @@ const DMCChannel = struct {
     pub fn loadAndPlaySample(self: *DMCChannel, mc: *MemoryController) !void {
         const address: u16 = 0xC000 + (@as(u16, self.sampleAddress) * 64);
         const length: u16 = @as(u16, self.sampleLength) * 16 + 1;
-        std.debug.print("address: 0x{x}, length: 0x{x}\n", .{ address, length });
+        // std.debug.print("address: 0x{x}, length: 0x{x}\n", .{ address, length });
         var sampleBuf: [4096]u8 = .{0} ** 4096;
         for (0..length) |i| {
             //  if it exceeds $FFFF, it is wrapped around to $8000.
@@ -764,7 +747,7 @@ const DMCChannel = struct {
         // for (0..@intFromFloat(sampleRate)) | i | {
         // }
         try self.converter.processPcmFrames(&samples, &frame_count_in, &self.audio.data, &frame_count_out);
-        std.debug.print("pcm frames count in: {d}, out: {d}\n", .{ frame_count_in, frame_count_out });
+        // std.debug.print("pcm frames count in: {d}, out: {d}\n", .{ frame_count_in, frame_count_out });
         // const expected = ;
         // std.debug.print("expected num output frames: {d}\n", .{expected});
     }
@@ -782,8 +765,8 @@ const DMCChannel = struct {
         // channel.node = try audio.engine.asNodeGraphMut().createDataSourceNode(
         //     zaudio.DataSourceNode.Config.init(channel.wave.asDataSourceMut()),
         // );
-        const endpoint = audio.engine.asNodeGraphMut().getEndpointMut();
-        try channel.sound.asNodeMut().attachOutputBus(0, endpoint, 0);
+        // const endpoint = audio.engine.asNodeGraphMut().getEndpointMut();
+        try channel.sound.asNodeMut().attachOutputBus(0, audio.mixer, 4);
         const converterConfig = zaudio.DataConverter.Config.init(.unsigned8, .float32, 1, audio.engine.asNodeGraph().getChannels(), 4182, // FIXME: sample rate in
             audio.engine.getSampleRate());
         channel.converter = try zaudio.DataConverter.create(converterConfig);
@@ -843,6 +826,7 @@ const AudioState = struct {
     engine: *zaudio.Engine,
     hpf: *zaudio.HpfNode,
     lpf: *zaudio.LpfNode,
+    mixer: *zaudio.Node,
     data: [DEVICE_SAMPLE_RATE * DEVICE_CHANNELS * 10]f32 = .{0.0} ** (DEVICE_SAMPLE_RATE * DEVICE_CHANNELS * 10),
 
     fn data_callback(device: *zaudio.Device, pOutput: ?*anyopaque, _: ?*const anyopaque, frame_count: u32) callconv(.c) void {
@@ -895,15 +879,19 @@ const AudioState = struct {
         );
         const lpfNode = try engine.asNodeGraphMut().createLpfNode(lpf_config);
 
+        const mixer = try  NesMixerNode.create(engine.asNodeGraphMut());
+
         const endpoint = engine.asNodeGraphMut().getEndpointMut();
         try lpfNode.asNodeMut().attachOutputBus(0, endpoint, 0);
         try hpfNode.asNodeMut().attachOutputBus(0, lpfNode.asNodeMut(), 0);
+        try mixer.attachOutputBus(0, hpfNode.asNodeMut(), 0);
 
         audio.* = .{
             .device = device,
             .engine = engine,
             .hpf = hpfNode,
             .lpf = lpfNode,
+            .mixer = mixer,
         };
         return audio;
     }
@@ -912,6 +900,7 @@ const AudioState = struct {
         audio.device.destroy();
         audio.hpf.destroy();
         audio.lpf.destroy();
+        NesMixerNode.destroy(audio.mixer);
         allocator.destroy(audio);
     }
 };
@@ -921,11 +910,13 @@ pub fn init(gpa: std.mem.Allocator) !Apu {
     apu.audio = try AudioState.create(gpa);
 
     try apu.audio.engine.start();
-    apu.pulse1Channel = try PulseChannel.create(apu.audio, gpa);
-    apu.pulse2Channel = try PulseChannel.create(apu.audio, gpa);
+    apu.pulse1Channel = try PulseChannel.create(apu.audio, gpa, 0);
+    apu.pulse2Channel = try PulseChannel.create(apu.audio, gpa, 1);
     apu.triangleChannel = try TriangleChannel.create(apu.audio);
     apu.noiseChannel = try NoiseChannel.create(apu.audio, gpa);
     apu.dmcChannel = try DMCChannel.create(apu.audio);
+
+    
 
     // const music = try apu.audio.engine.createSoundFromFile(
     //     "content/" ++ "Broke For Free - Night Owl.mp3",

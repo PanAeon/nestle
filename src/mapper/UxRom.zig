@@ -146,7 +146,7 @@ pub fn ppu_write(ptr: *anyopaque, addr: u14, data: u8) void {
             0x2400...0x27FF => m.vram[addr - 0x2000] = data,
             0x2800...0x2BFF => m.vram[addr - 0x2800] = data,
             0x2C00...0x2FFF => m.vram[addr - 0x2800] = data,
-            else => @panic("boo"),
+            else => std.debug.panic("(write) wrong vram address: 0x{x}", .{addr}),
         },
         .Vertical => switch (addr) {
             0x0000...0x1FFF => m.chrRAM[addr] = data, // 8kb of chrRAM
@@ -155,7 +155,7 @@ pub fn ppu_write(ptr: *anyopaque, addr: u14, data: u8) void {
             0x2400...0x27FF => m.vram[addr - 0x2400] = data,
             0x2800...0x2BFF => m.vram[addr - 0x2400] = data,
             0x2C00...0x2FFF => m.vram[addr - 0x2800] = data,
-            else => @panic("boo"),
+            else => std.debug.panic("(write) wrong vram address: 0x{x}", .{addr}),
         },
         else => std.debug.panic("unsupported mirroring by UxRom {any}", .{m.mirroring}),
     }

@@ -8,6 +8,7 @@ chrROM: []u8,
 vram: []u8,
 mirroring: Mirroring,
 prgRAM: [2048]u8, // or 4k in Family Basic only
+isNrom256: bool = false,
 
 pub fn create(gpa: std.mem.Allocator, prgROM: []u8, chrROM: []u8, vram: []u8, mirroring: Mirroring) !*NRom {
     var nrom = try gpa.create(NRom);
@@ -15,6 +16,7 @@ pub fn create(gpa: std.mem.Allocator, prgROM: []u8, chrROM: []u8, vram: []u8, mi
     nrom.chrROM = chrROM;
     nrom.vram = vram;
     nrom.mirroring = mirroring;
+    nrom.isNrom256 = prgROM.len > (16*1024);
     return nrom;
 }
 pub fn destroy(ptr: *anyopaque, gpa: std.mem.Allocator) void {
@@ -48,7 +50,11 @@ pub fn read(ptr: *anyopaque, addr: u16) u8 {
             return m.prgROM[addr - 0x8000];
         },
         0xC000...0xFFFF => {
-            return m.prgROM[addr - 0xC000]; // FIXME: nrom-256?
+            if (m.isNrom256) {
+                return m.prgROM[addr - 0x8000];
+            } else {
+                return m.prgROM[addr - 0xC000];
+            }
         },
         else => std.debug.panic("wrong address for mapper: {x}", .{addr}),
     }

@@ -66,10 +66,6 @@ pub fn main() !void {
         try std.posix.chdir(path);
     }
 
-    // if (true) {
-    //     try OldMain.main();
-    //     return;
-    // }
 
     try glfw.init();
     defer glfw.terminate();
@@ -278,6 +274,7 @@ pub fn init() !void {
     //   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA,gl.UNSIGNED_BYTE, image);
     //   gl.generateMipmap(gl.TEXTURE_2D);
     // });
+    _ = glfw.setFramebufferSizeCallback(window, onChangeFBSize);
 
     const fps_target: f64 = 60.0;
     const frame_time: f64 = 1.0 / fps_target;
@@ -301,6 +298,8 @@ pub fn init() !void {
         lastFrameTime = glfw.getTime();
         // updateAndRender();
         glfw.pollEvents();
+        const fb_size = window.getFramebufferSize();
+        _ = &fb_size;
         // const jj = try glfw.joystickAsGamepad(joystick).?.getState();
 
         const buttons = try glfw.getJoystickButtons(joystick);
@@ -338,7 +337,8 @@ pub fn init() !void {
 
         gl.uniform4fv(colorLocation, 1, color[0..]);
         // const ortho = zm.orthographicLhGl(1920.0, 1080.0, 0.0, 1.0);
-        const ortho = zm.orthographicOffCenterLhGl(0.0, 2.0 * @as(f32, @floatFromInt(NES_WIDTH)), 0.0, 2.0 * @as(f32, @floatFromInt(NES_HEIGHT)), 0.0, 1.0);
+        const ortho = zm.orthographicOffCenterLhGl(0.0, @floatFromInt(fb_size[0]), 0.0, @floatFromInt(fb_size[1]), 0.0, 1.0);
+        // const ortho = zm.orthographicOffCenterLhGl(0.0, 2.0 * @as(f32, @floatFromInt(NES_WIDTH)), 0.0, 2.0 * @as(f32, @floatFromInt(NES_HEIGHT)), 0.0, 1.0);
         gl.uniformMatrix4fv(projection_matrix, 1, 0, zm.arrNPtr(&ortho));
         gl.bindTexture(gl.TEXTURE_2D, textures[0]);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, NES_WIDTH, NES_HEIGHT, 0, gl.RGBA, gl.UNSIGNED_BYTE, &imageData);
@@ -463,4 +463,8 @@ pub fn gen_tex_coords(vao: u32, texAttrLocation: i32, texBuffer: u32) void {
 pub fn deinit() void {
     window.destroy();
     glfw.terminate();
+}
+pub fn onChangeFBSize(w: *glfw.Window, width:  c_int, height: c_int) callconv(.c) void {
+    _ = &w;
+    gl.viewport(0, 0, width, height);
 }

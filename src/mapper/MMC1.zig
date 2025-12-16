@@ -222,7 +222,7 @@ pub fn ppu_read(ptr: *anyopaque, addr: u14) u8 {
             else => @panic("not reachable")
         },
     },
-    else => @panic("boo"),
+    else => std.debug.panic("ppu read: wrong address for mapper: {x}", .{addr}),
     }
 }
 
@@ -286,7 +286,10 @@ pub fn ppu_write(ptr: *anyopaque, addr: u14, data: u8) void {
             else => @panic("not reachable")
         },
     },
-    else => @panic("boo"),
+    else => {
+        const _addr = addr - 0x1000;
+        ppu_write(ptr, _addr, data);
+    }, //std.debug.panic("ppu write: wrong address for mapper: 0x{x}", .{addr}),
     }
 }
 
