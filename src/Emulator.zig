@@ -20,12 +20,13 @@ memoryController: MemoryController,
 cpu: Cpu,
 printCore: bool,
 pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
+    // var f = try std.fs.openFileAbsolute("/foo/snes/Top Gun (USA) (Rev A).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Castlevania.USA.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Darkwing Duck (USA).nes", .{});
      // var f = try std.fs.openFileAbsolute("/foo/snes/7-dmc_basics.nes", .{});
       // var f = try std.fs.openFileAbsolute("/foo/snes/Metroid (USA).nes", .{});
      // var f = try std.fs.openFileAbsolute("/foo/snes/zelda.nes", .{});
-      var f = try std.fs.openFileAbsolute("/foo/snes/Teenage Mutant Ninja Turtles (USA).nes", .{});
+      // var f = try std.fs.openFileAbsolute("/foo/snes/Teenage Mutant Ninja Turtles (USA).nes", .{});
      // var f = try std.fs.openFileAbsolute("/foo/snes/Contra (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Chip 'n Dale - Rescue Rangers (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/DuckTales (USA).nes", .{});
@@ -36,7 +37,7 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
     // var f = try std.fs.openFileAbsolute("/foo/snes/Metal Gear (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Jurassic Park (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/thwaite.nes", .{});
-    // var f = try std.fs.openFileAbsolute("/foo/snes/Super Mario Bros. (World).nes", .{});
+    var f = try std.fs.openFileAbsolute("/foo/snes/Super Mario Bros. (World).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/nestest.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/sprite.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/controller.nes", .{});

@@ -9,7 +9,7 @@ const ControlRegister = packed struct {
 //     Nametable arrangement: (0: one-screen, lower bank; 1: one-screen, upper bank;
 //                2: horizontal arrangement ("vertical mirroring", PPU A10); 
 //                3: vertical arrangement ("horizontal mirroring", PPU A11) )
-    mirroring: u2 = 0, 
+    nametableArragement: u2 = 0, 
      // PRG-ROM bank mode (0, 1: switch 32 KB at $8000, ignoring low bit of bank number;
      //                     2: fix first bank at $8000 and switch 16 KB bank at $C000;
      //                     3: fix last bank at $C000 and switch 16 KB bank at $8000)
@@ -46,14 +46,14 @@ chrBank0Register: u5,
 chrBank1Register: u5,
 prgBankRegister: PrgBank,
 
-pub fn create(gpa: std.mem.Allocator, prgROM: []u8, chrROM: []u8,  chrRAM: []u8, vram: []u8, mirroring: Mirroring) !*MMC1 {
+pub fn create(gpa: std.mem.Allocator, prgROM: []u8, chrROM: []u8,  chrRAM: []u8, vram: []u8, nametableArragement: Mirroring) !*MMC1 {
     var mmc1 = try gpa.create(MMC1);
     mmc1.prgROM = prgROM;
     mmc1.chrROM = chrROM;
     mmc1.chrRAM = chrRAM;
     mmc1.vram = vram;
-    _ = &mirroring;
-    // mmc1.mirroring = mirroring;
+    _ = &nametableArragement;
+    // mmc1.nametableArragement = nametableArragement;
     // mmc1.firstBank = 0;
     mmc1.lastBankNum = (prgROM.len / (16*1024)) - 1;
     // mmc1.firstChrBank = 0;
@@ -192,7 +192,7 @@ pub fn ppu_read(ptr: *anyopaque, addr: u14) u8 {
         }
     },
     0x2000...0x2FFF => 
-        switch (m.controlRegister.mirroring) {
+        switch (m.controlRegister.nametableArragement) {
         0 => switch (addr) { // one screen lower bank
             0x2000...0x23FF => return m.vram[addr - 0x2000],
             0x2400...0x27FF => return m.vram[addr - 0x2400],
@@ -209,15 +209,15 @@ pub fn ppu_read(ptr: *anyopaque, addr: u14) u8 {
         },
         2 => switch (addr) {// vertical mirroring, PPU A10
             0x2000...0x23FF => return m.vram[addr - 0x2000],
-            0x2400...0x27FF => return m.vram[addr - 0x2400],
-            0x2800...0x2BFF => return m.vram[addr - 0x2400],
+            0x2400...0x27FF => return m.vram[addr - 0x2000],
+            0x2800...0x2BFF => return m.vram[addr - 0x2800],
             0x2C00...0x2FFF => return m.vram[addr - 0x2800],
             else => @panic("not reachable")
         }, 
         3 => switch (addr) { //horizontal mirroring, PPU A11
             0x2000...0x23FF => return m.vram[addr - 0x2000],
-            0x2400...0x27FF => return m.vram[addr - 0x2000],
-            0x2800...0x2BFF => return m.vram[addr - 0x2800],
+            0x2400...0x27FF => return m.vram[addr - 0x2400],
+            0x2800...0x2BFF => return m.vram[addr - 0x2400],
             0x2C00...0x2FFF => return m.vram[addr - 0x2800],
             else => @panic("not reachable")
         },
@@ -256,7 +256,7 @@ pub fn ppu_write(ptr: *anyopaque, addr: u14, data: u8) void {
         }
     },
     0x2000...0x2FFF => 
-        switch (m.controlRegister.mirroring) {
+        switch (m.controlRegister.nametableArragement) {
         0 => switch (addr) { // one screen lower bank
             0x2000...0x23FF => m.vram[addr - 0x2000] = data,
             0x2400...0x27FF => m.vram[addr - 0x2400] = data,
@@ -273,15 +273,15 @@ pub fn ppu_write(ptr: *anyopaque, addr: u14, data: u8) void {
         },
         2 => switch (addr) {// vertical mirroring, PPU A10
             0x2000...0x23FF => m.vram[addr - 0x2000] = data,
-            0x2400...0x27FF => m.vram[addr - 0x2400] = data,
-            0x2800...0x2BFF => m.vram[addr - 0x2400] = data,
+            0x2400...0x27FF => m.vram[addr - 0x2000] = data,
+            0x2800...0x2BFF => m.vram[addr - 0x2800] = data,
             0x2C00...0x2FFF => m.vram[addr - 0x2800] = data,
             else => @panic("not reachable")
         }, 
         3 => switch (addr) { //horizontal mirroring, PPU A11
             0x2000...0x23FF => m.vram[addr - 0x2000] = data,
-            0x2400...0x27FF => m.vram[addr - 0x2000] = data,
-            0x2800...0x2BFF => m.vram[addr - 0x2800] = data,
+            0x2400...0x27FF => m.vram[addr - 0x2400] = data,
+            0x2800...0x2BFF => m.vram[addr - 0x2400] = data,
             0x2C00...0x2FFF => m.vram[addr - 0x2800] = data,
             else => @panic("not reachable")
         },

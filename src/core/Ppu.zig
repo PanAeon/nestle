@@ -128,6 +128,7 @@ scanlineSpriteBuffer: [256]SpriteData = std.mem.zeroes([256]SpriteData),
 cpu: *Cpu = undefined,
 memoryController: *MemoryController = undefined,
 ppuReadBuff: u8 = 0,
+frameNumber: u64 = 0,
 
 // The PPU outputs a picture region of 256x240 pixels and a border region extending 16 pixels left, 
 // 11 pixels right, and 2 pixels down (283x242)
@@ -280,6 +281,7 @@ pub fn fetchTileData(self: *Ppu) void  {
               (0x400 * @as(u16, self.v.horizontalNametable)) +
               @as(u16, self.v.coarseYScroll) * 32 +
               self.v.coarseXScroll;
+
     
     const attrTableAddress = 0x23C0 + 
               (0x800 * @as(u16, self.v.verticalNametable)) + 
@@ -295,6 +297,16 @@ pub fn fetchTileData(self: *Ppu) void  {
     const bitAddr: u3 = 2 * (@as(u3, dy) * 2 + dx);
     const res: u2 = @truncate((attrData >> bitAddr) & 0x3);
     self.tiledata[0].nametable = self.ppu_read(nametableAddr);
+     // if (self.v.coarseXScroll == 11 and self.v.coarseYScroll == 3 and self.tiledata[0].nametable != 0x2E) {
+    //     // std.debug.print("coarse x scroll: {d};\n", .{self.v.coarseXScroll});
+    //     std.debug.print("nametables h:{d}, v:{d}", .{self.v.horizontalNametable, self.v.verticalNametable});
+         // std.debug.print("> nametable adr: 0x{x}\n", .{nametableAddr});
+    //     std.debug.print("> tile idx: 0x{x}\n", .{self.tiledata[0].nametable});
+    //     self.tiledata[0].nametable = 0x2E;
+    //     // std.debug.print("> patternTableAddr adr: 0x{x}\n", .{patternTableAddr});
+    //     // std.debug.print(">> {x} {x}\n", .{self.tiledata[0].patternTableTileLow, self.tiledata[0].patternTableTileHigh});
+    //     std.debug.print("----\n", .{});
+     // }
     self.tiledata[0].attrTable = res;
     const bgPatternTableAddr: u16 = @as(u16, self.ppuCtrl.backgroundPatternTableAddress) * 0x1000;
     const patternTableAddr = @as(u16, 16) * self.tiledata[0].nametable + bgPatternTableAddr +  self.v.fineYScroll;
@@ -305,12 +317,6 @@ pub fn fetchTileData(self: *Ppu) void  {
         self.tiledata[1] = self.tiledata[0];
 
     // self.numfetches+=1;
-    if (self.v.coarseXScroll == 8 and self.v.coarseYScroll == 8) {
-        // std.debug.print("> nametable adr: 0x{x}\n", .{nametableAddr});
-        // std.debug.print("> tile idx: 0x{x}\n", .{self.tiledata[0].nametable});
-        // std.debug.print("> patternTableAddr adr: 0x{x}\n", .{patternTableAddr});
-        // std.debug.print(">> {x} {x}\n", .{self.tiledata[0].patternTableTileLow, self.tiledata[0].patternTableTileHigh});
-    }
      self.incrementX();
 }
 //341 PPU clock cycles
@@ -335,6 +341,9 @@ pub fn drawVisibleScanline(self: *Ppu) void {
     if (self.dot >= 257 and self.dot <= 320) {
         self.oamAddr = 0;
     }
+    // if (self.scanline == 32 and self.dot == 0 and !self.ppuStatus.sprite0Hit) {
+    //     self.ppuStatus.sprite0Hit = true;
+    // }
     if (self.dot == 256 ) {
         self.incrementY();
     }
@@ -344,9 +353,9 @@ pub fn drawVisibleScanline(self: *Ppu) void {
     if (self.dot == 257 ) {
         self.copyXPosition();
     }
-    if (self.dot == 328 or self.dot == 336 or (self.dot >= 8 and self.dot <= 256 and (self.dot % 8 == 0)) ) {
-         // self.incrementX();
-    }
+    // if (self.dot == 328 or self.dot == 336 or (self.dot >= 8 and self.dot <= 256 and (self.dot % 8 == 0)) ) {
+    //      self.incrementX();
+    // }
     if (self.dot >= self.fineXScroll and self.dot < (256+8)) {
         const tileData = self.tiledata[3];
         const xscroll:u3 = @truncate((8  - (self.dot % 8) ) );
@@ -358,7 +367,7 @@ pub fn drawVisibleScanline(self: *Ppu) void {
 
             const paletteIdx: PaletteIdx = .{
                             .tilePatternData = pixel,
-                            .paletteNumFromAttr = @truncate(self.tiledata[3].attrTable),
+                            .paletteNumFromAttr = @truncate(tileData.attrTable),
                             .isSprite = false,
                         };
             const colorIdx: u6 = @truncate(self.ppu_read(@as(u16, 0x3F00) + @as(u5, @bitCast(paletteIdx))));
@@ -404,8 +413,8 @@ pub fn run(self: *Ppu) void {
     switch (self.scanline) {
         0...239 => {
             if (self.scanline == 0 and self.dot == 0) {
-                self.ppuStatus.VBlank = false;
-                // std.debug.print("scaline 0,0>\n", .{});
+                // std.debug.print("frame {d}>\n", .{self.frameNumber});
+                self.frameNumber+%=1;
             }
             self.drawVisibleScanline();
         },
@@ -417,25 +426,29 @@ pub fn run(self: *Ppu) void {
                 if (self.ppuCtrl.VBlankNMIEnable) {
                     self.cpu.nmi();
                 }
-                self.ppuStatus.VBlank = true;
             }
             // The PPU makes no memory accesses during these scanlines
         },
         261 => {
-            if (self.dot >= 280 and self.dot <= 304) {
-                self.copyYPosition();
-            }
             if (self.dot == 0) {
                 self.ppuStatus.spriteOverflow = false;
                 self.ppuStatus.sprite0Hit = false;
+                self.ppuStatus.VBlank = false;
                 // std.debug.print("scaline 261,0> -1 scanline\n", .{});
             }
             self.drawVisibleScanline();
+            if (self.dot >= 280 and self.dot <= 304) {
+                self.copyYPosition();
+            }
             // if (self.dot == 0) {
             //     self.drawSprites();
             // }
         }, // pre-rendeer, During pixels 280 through 304 of this scanline, the vertical scroll bits are reloaded if rendering is enabled.  
-        262,263,264 => {}, // ignore
+        262,263,264 => {
+    // if (self.dot == 257 ) {
+    //     self.copyXPosition();
+    // }
+        }, // ignore
         else => {std.debug.print("out of scanlines: {d}\n", .{self.scanline});},
     }
     self.dot +=1;
@@ -476,7 +489,7 @@ pub fn read(self: *Ppu, addr: u16) u8 {
             // v +%= (~incr + (incr * @as(u15, 32)));
             // self.v = @bitCast(v);
             const res = self.ppuReadBuff;
-            self.ppuReadBuff = self.ppu_read(self.t1); // FIXME: read buffer
+            self.ppuReadBuff = self.ppu_read(self.t1); 
             const incr = self.ppuCtrl.vramAddressIncrement;
             self.t1 +%= (~incr + (incr * @as(u15, 32)));
             return res;
@@ -495,6 +508,7 @@ pub fn write(self: *Ppu, addr: u16, data: u8) void {
             }
             self.t.horizontalNametable = @truncate(self.ppuCtrl.baseNametableAddress);
             self.t.verticalNametable = @truncate(self.ppuCtrl.baseNametableAddress >> 1);
+            // std.debug.print("x nametable update: {d}; sl: {d}, dot: {d}\n", .{self.t.horizontalNametable, self.scanline, self.dot});
             // std.debug.print("PPU: write to CTRL, {any}\n", .{self.ppuCtrl});
         }, // TODO: writes to this register are ignored until the first pre-render scanline.
         0x2001 => self.ppuMask = @bitCast(data), // w
@@ -509,6 +523,7 @@ pub fn write(self: *Ppu, addr: u16, data: u8) void {
             if (self.writeToggle == 0) {
                 self.t.coarseXScroll = @truncate(data >> 3); 
                 self.fineXScroll = @truncate(data);
+                // std.debug.print("x scroll update: {d}; sl: {d}, dot: {d}\n", .{self.t.coarseXScroll, self.scanline, self.dot});
             } else {
                 self.t.coarseYScroll = @truncate(data >> 3);
                 self.t.fineYScroll = @truncate(data); 
@@ -523,11 +538,13 @@ pub fn write(self: *Ppu, addr: u16, data: u8) void {
                 // t = (t & 0x00FF) | (@as(u15, data) << 8) & 0x3fff;
                 // self.t = @bitCast(t);
                 self.t1 = (self.t1 & 0x00FF) | (@as(u15, data) << 8) & 0x3fff;
+                self.t = @bitCast(self.t1);
             } else {
                 // var t: u15 = @bitCast(self.t);
                 // t = t & (0x7F00) | @as(u15, data);
                 // self.t = @bitCast(t);
                 self.t1 = self.t1 & (0x7F00) | @as(u15, data);
+                self.t = @bitCast(self.t1);
             }
             self.writeToggle +%= 1;
         }, // Wx2

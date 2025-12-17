@@ -22,6 +22,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "nestle", .module = mod },
             },
         });
+    exe_mod.strip = false;
     const exe = b.addExecutable(.{
         .name = "nestle",
         .root_module = exe_mod,
@@ -44,7 +45,7 @@ check.dependOn(&exe_check.step);
     const zgui = b.dependency("zgui", .{
         .target = target,
         .backend = .glfw_opengl3,
-        .shared = true,
+        // .shared = true,
         // .with_implot = true,
          .with_freetype = false
     });
@@ -113,6 +114,7 @@ check.dependOn(&exe_check.step);
     // step). By default the install prefix is `zig-out/` but can be overridden
     // by passing `--prefix` or `-p`.
     b.installArtifact(exe);
+    
 
     // This creates a top level step. Top level steps have a name and can be
     // invoked by name when running `zig build` (e.g. `zig build run`).
