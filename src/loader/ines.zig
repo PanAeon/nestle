@@ -72,9 +72,9 @@ pub fn readRom(gpa: std.mem.Allocator, f: *File, vram: []u8) !RomInfo {
         chrROM = try gpa.alloc(u8, @as(usize, header.chrRomSize) * 8 * 1024);
         _ = &nRead;
         nRead = try f.read(chrROM);
-        // if (nRead != @as(usize, header.chrRomSize) * 8 * 1024) {
-        //     return error.FileTooShort;
-        // }
+        if (nRead != @as(usize, header.chrRomSize) * 8 * 1024) {
+            return error.FileTooShort;
+        }
     }
     const mapper: u8 = header.flags6.lowerNybbleOfMapper +
         (@as(u8, header.flags7.upperNybleOfMapper) << 4);
@@ -95,10 +95,12 @@ pub fn readRom(gpa: std.mem.Allocator, f: *File, vram: []u8) !RomInfo {
     // // std.fmt.hexToBytes(u, input: []const u8)
     //        CPU $8000-$BFFF: 16 KB switchable PRG ROM bank
     //   CPU $C000-$FFFF: 16 KB PRG ROM bank, fixed to the last bank
-    const mirroring = if (header.flags6.nametableArragement == 0)
-        Mapper.Mirroring.Vertical
+    const mirroring = if (header.flags6.alternativeNametableLayout == 1) 
+        Mapper.NametableArragnment.FourScreens // FIXME: 4screens for mmc3..
+        else if (header.flags6.nametableArragement == 0)
+        Mapper.NametableArragnment.Vertical
     else
-        Mapper.Mirroring.Horizontal;
+        Mapper.NametableArragnment.Horizontal;
     const chrRAM: []u8 = if (header.chrRomSize == 0)
         try gpa.alloc(u8, 0x2000) // 8kb
     else
@@ -118,6 +120,10 @@ pub fn readRom(gpa: std.mem.Allocator, f: *File, vram: []u8) !RomInfo {
         2 => {
             var uxRom = try Mapper.UxRom.create(gpa, prgROM, chrROM, chrRAM, vram, mirroring);
             return .{ .mapper = uxRom.interface() };
+        },
+        4 => {
+            var mmc3 = try Mapper.MMC3.create(gpa, prgROM, chrROM, vram, mirroring);
+            return .{ .mapper = mmc3.interface() };
         },
         else => std.debug.panic("Unknown mapper {d}", .{header.flags6.lowerNybbleOfMapper}),
     }

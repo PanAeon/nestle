@@ -334,6 +334,11 @@ pub fn drawVisibleScanline(self: *Ppu) void {
     if (self.dot == 321 or self.dot == 329 or (self.dot >= 1 and self.dot < 256 and (self.dot % 8 == 1))) {  // fetch tile data
         self.fetchTileData();
     }
+    if (self.dot == 260) {
+        if (self.mapper.onScanline() and !self.cpu.P.InterrupDisable) {
+            self.cpu.irq();
+        }
+    }
     // The shifters are reloaded during ticks 9, 17, 25, ..., 257. 
     if ((self.dot >= 9) and (self.dot <= 257) and (self.dot % 8 == 1)) {
         // self.tiledata[3] = self.tiledata[2];
@@ -610,9 +615,6 @@ pub fn ppu_read(self: *Ppu, addr: u16) u8 {
     }
 }
 pub fn ppu_write(self: *Ppu, addr: u14, data: u8) void {
-    // if (addr >= 3*16 and addr < 4*16) {
-    // std.debug.print("ppu write: 0x{x}, data: 0x{x}\n", .{addr, data});
-    // }
     switch (addr) {
         0x0000...0x3EFF => self.mapper.ppu_write(addr, data),
         0x3F00...0x3F1F => {

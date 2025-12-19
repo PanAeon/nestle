@@ -1,5 +1,5 @@
 const Mapper = @import("Mapper.zig");
-const Mirroring = Mapper.Mirroring;
+const NametableArragnment = Mapper.NametableArragnment;
 const std = @import("std");
 
 // https://www.nesdev.org/wiki/MMC1
@@ -46,7 +46,7 @@ chrBank0Register: u5,
 chrBank1Register: u5,
 prgBankRegister: PrgBank,
 
-pub fn create(gpa: std.mem.Allocator, prgROM: []u8, chrROM: []u8,  chrRAM: []u8, vram: []u8, nametableArragement: Mirroring) !*MMC1 {
+pub fn create(gpa: std.mem.Allocator, prgROM: []u8, chrROM: []u8,  chrRAM: []u8, vram: []u8, nametableArragement: NametableArragnment) !*MMC1 {
     var mmc1 = try gpa.create(MMC1);
     mmc1.prgROM = prgROM;
     mmc1.chrROM = chrROM;
@@ -83,7 +83,8 @@ pub fn interface(self: *MMC1) Mapper {
         .vtable = &.{ .read = read, .write = write, .ppu_read = ppu_read, .ppu_write = ppu_write, .destroy = destroy,
             .serialize = serialize,
             .deserialize = deserialize,
-            .byteSize = byteSize
+            .byteSize = byteSize,
+            .onScanline = onScanline
         },
     };
 }
@@ -355,4 +356,7 @@ pub fn deserialize(ptr: *anyopaque, reader: *std.Io.Reader) !void {
 pub fn byteSize(ptr: *anyopaque) u64 {
     const m: *MMC1 = @ptrCast(@alignCast(ptr));
     return m.chrRAM.len + 4 + 6;
+}
+pub fn onScanline(_: *anyopaque) bool {
+    return false;
 }

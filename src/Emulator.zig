@@ -11,7 +11,7 @@ const ines = @import("loader/ines.zig");
 const zaudio = @import("zaudio");
 const Emulator = @This();
 
-vram: [2048]u8,
+vram: [4096]u8,
 mapper: Mapper,
 apu: Apu,
 ppu: Ppu,
@@ -38,17 +38,20 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
     // var f = try std.fs.openFileAbsolute("/foo/snes/Metal Gear (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Jurassic Park (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/thwaite.nes", .{});
-    var f = try std.fs.openFileAbsolute("/foo/snes/Super Mario Bros. (World).nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/Super Mario Bros. (World).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/nestest.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/sprite.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/controller.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Total.Recall.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/testroms/palette_fill.nes", .{});
+    // mmc3:
       // var f = try std.fs.openFileAbsolute("/foo/snes/Power Blade 2 (USA).nes", .{});
+      var f = try std.fs.openFileAbsolute("/foo/snes/Jurassic Park (USA).nes", .{});
+      // var f = try std.fs.openFileAbsolute("/foo/snes/Alien 3 (USA).nes", .{});
     defer f.close();
     // _ = try nestle.ines.hasMagicByte(&f);
     emu.* = Emulator{
-        .vram = std.mem.zeroes([2048]u8),
+        .vram = std.mem.zeroes([4096]u8),
         .mapper = undefined,
         .apu = undefined,
         .ppu = undefined,

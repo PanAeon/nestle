@@ -4,8 +4,9 @@ const Allocator = std.mem.Allocator;
 pub const NRom = @import("NRom.zig");
 pub const UxRom = @import("UxRom.zig");
 pub const MMC1 = @import("MMC1.zig");
+pub const MMC3 = @import("MMC3.zig");
 
-pub const Mirroring = enum { Horizontal, Vertical, SingleScreen, FourScreens, Other };
+pub const NametableArragnment = enum { Horizontal, Vertical, SingleScreen, FourScreens, Other };
 const Mapper = @This();
 ptr: *anyopaque,
 vtable: *const VTable,
@@ -18,6 +19,7 @@ pub const VTable = struct {
     serialize: *const fn(ptr: *anyopaque, writer: *std.Io.Writer) anyerror!void,
     deserialize: *const fn(ptr: *anyopaque, reader: *std.Io.Reader) anyerror!void,
     byteSize: *const fn(ptr: *anyopaque) u64,
+    onScanline: *const fn(ptr: *anyopaque) bool, 
 };
 
 pub inline fn read(self: *Mapper, addr: u16) u8 {
@@ -49,4 +51,7 @@ pub fn deserialize(self: *Mapper, reader: *std.Io.Reader) !void {
 }
 pub fn byteSize(self: *Mapper) u64 {
     return self.vtable.byteSize(self.ptr);
+}
+pub fn onScanline(self: *Mapper) bool {
+    return self.vtable.onScanline(self.ptr);
 }

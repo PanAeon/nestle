@@ -1,5 +1,5 @@
 const Mapper = @import("Mapper.zig");
-const Mirroring = Mapper.Mirroring;
+const NametableArragnment = Mapper.NametableArragnment;
 const std = @import("std");
 const UxRom = @This();
 const expect = std.testing.expect;
@@ -8,10 +8,10 @@ chrROM: []u8,
 chrRAM: []u8,
 currentBank: u8 = 0,
 vram: []u8,
-mirroring: Mirroring,
+mirroring: NametableArragnment,
 // chrRAM: 8kb?, mirror: vertical
 
-pub fn create(gpa: std.mem.Allocator, prgROM: []u8, chrROM: []u8, chrRAM: []u8, vram: []u8, mirroring: Mirroring) !*UxRom {
+pub fn create(gpa: std.mem.Allocator, prgROM: []u8, chrROM: []u8, chrRAM: []u8, vram: []u8, mirroring: NametableArragnment) !*UxRom {
     var uxRom = try gpa.create(Mapper.UxRom);
     uxRom.prgROM = prgROM;
     uxRom.chrROM = chrROM;
@@ -36,7 +36,8 @@ pub fn interface(self: *UxRom) Mapper {
         .vtable = &.{ .read = read, .write = write, .ppu_read = ppu_read, .ppu_write = ppu_write, .destroy = destroy,
             .serialize = serialize,
             .deserialize = deserialize,
-            .byteSize = byteSize
+            .byteSize = byteSize,
+            .onScanline = onScanline
         },
     };
 }
@@ -211,4 +212,8 @@ pub fn deserialize(ptr: *anyopaque, reader: *std.Io.Reader) !void {
 pub fn byteSize(ptr: *anyopaque) u64 {
     const m: *UxRom = @ptrCast(@alignCast(ptr));
     return 1 + m.chrRAM.len;
+}
+
+pub fn onScanline(_: *anyopaque) bool {
+    return false;
 }

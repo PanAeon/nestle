@@ -1,16 +1,16 @@
 const Mapper = @import("Mapper.zig");
-const Mirroring = Mapper.Mirroring;
+const NametableArragnment = Mapper.NametableArragnment;
 const std = @import("std");
 const NRom = @This();
 const expect = std.testing.expect;
 prgROM: []u8,
 chrROM: []u8,
 vram: []u8,
-mirroring: Mirroring,
+mirroring: NametableArragnment,
 prgRAM: [2048]u8, // or 4k in Family Basic only
 isNrom256: bool = false,
 
-pub fn create(gpa: std.mem.Allocator, prgROM: []u8, chrROM: []u8, vram: []u8, mirroring: Mirroring) !*NRom {
+pub fn create(gpa: std.mem.Allocator, prgROM: []u8, chrROM: []u8, vram: []u8, mirroring: NametableArragnment) !*NRom {
     var nrom = try gpa.create(NRom);
     nrom.prgROM = prgROM;
     nrom.chrROM = chrROM;
@@ -37,7 +37,8 @@ pub fn interface(self: *NRom) Mapper {
             .destroy = destroy,
             .serialize = serialize,
             .deserialize = deserialize,
-            .byteSize = byteSize
+            .byteSize = byteSize,
+            .onScanline = onScanline
         },
     };
 }
@@ -141,7 +142,7 @@ pub fn ppu_write(ptr: *anyopaque, addr: u14, data: u8) void {
     }
 }
 
-pub fn vramAddress(addr: u14, m: Mirroring) u14 {
+pub fn vramAddress(addr: u14, m: NametableArragnment) u14 {
     switch (m) {
         .Horizontal => switch (addr) {
             0x2000...0x23FF => addr - 0x2000,
@@ -188,4 +189,7 @@ pub fn deserialize(ptr: *anyopaque, reader: *std.Io.Reader) !void {
 pub fn byteSize(ptr: *anyopaque) u64 {
     _ = &ptr;
     return 2048;
+}
+pub fn onScanline(_: *anyopaque) bool {
+    return false;
 }
