@@ -70,3 +70,17 @@ pub fn write(self: *MemoryController, address: u16, data: u8) void {
         0x8000...0xFFFF => self.mapper.write(address, data),
     }
 }
+pub fn byteSize(self: *MemoryController) u64 {
+    _ = &self;
+    return 2048;
+}
+pub fn serialize(self: *MemoryController, writer: *std.Io.Writer) !void {
+    try writer.writeAll(&self.internalRam);
+    // const end = pos + self.internalRam.len;
+    // @memcpy(buffer[pos..end], &self.internalRam);
+    // return end;
+}
+pub fn deserialize(self: *MemoryController, reader: *std.Io.Reader) !void  {
+    const slice = try reader.take(self.internalRam.len);
+    @memcpy(&self.internalRam, slice);
+}

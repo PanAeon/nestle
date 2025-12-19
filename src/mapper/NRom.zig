@@ -29,7 +29,16 @@ pub fn destroy(ptr: *anyopaque, gpa: std.mem.Allocator) void {
 pub fn interface(self: *NRom) Mapper {
     return .{
         .ptr = self,
-        .vtable = &.{ .read = read, .write = write, .ppu_read = ppu_read, .ppu_write = ppu_write, .destroy = destroy },
+        .vtable = &.{ 
+            .read = read, 
+            .write = write, 
+            .ppu_read = ppu_read, 
+            .ppu_write = ppu_write, 
+            .destroy = destroy,
+            .serialize = serialize,
+            .deserialize = deserialize,
+            .byteSize = byteSize
+        },
     };
 }
 
@@ -164,4 +173,19 @@ pub fn vramAddress(addr: u14, m: Mirroring) u14 {
         },
         .Other => std.debug.panic("unsupported mirroring {any}", .{m}),
     }
+}
+
+pub fn serialize(ptr: *anyopaque, writer: *std.Io.Writer) !void {
+    const m: *NRom = @ptrCast(@alignCast(ptr));
+    try writer.writeAll(&m.prgRAM);
+    
+}
+pub fn deserialize(ptr: *anyopaque, reader: *std.Io.Reader) !void {
+    const m: *NRom = @ptrCast(@alignCast(ptr));
+    const slice = try reader.take(2048);
+    @memcpy(&m.prgRAM, slice);
+}
+pub fn byteSize(ptr: *anyopaque) u64 {
+    _ = &ptr;
+    return 2048;
 }

@@ -5,6 +5,7 @@ const zgui = @import("zgui");
 const zaudio = @import("zaudio");
 const zm = @import("zmath");
 const nestle = @import("nestle");
+const Rewind = @import("Rewind.zig");
 const Emulator = nestle.Emulator;
 const JoystickState = nestle.core.Controller.JoystickState;
 // const OldMain = @import("oldmain.zig");
@@ -143,6 +144,13 @@ pub fn init() !void {
     try Emulator.init(gpa, &imageData, &emulator);
     defer emulator.deinit(gpa);
 
+    const rewBuffer = try gpa.alloc(u8, emulator.byteSize());
+    defer gpa.free(rewBuffer);
+    var rewWriter = std.Io.Writer.fixed(rewBuffer);
+
+    var rewind = try Rewind.init(gpa, emulator.byteSize()); 
+    defer rewind.deinit(gpa);
+
     // try emulator.run_cpu_test();
     // if (true) return;
 
@@ -225,7 +233,8 @@ pub fn init() !void {
 
     // const numStripes = comptime 20;
 
-    gen_triangles(vaos[0], positionAttrLocation, buffers[0]);
+    var prevFBSize = window.getFramebufferSize();
+    gen_triangles(vaos[0], positionAttrLocation, buffers[0], prevFBSize);
     gen_tex_coords(vaos[0], texCoordAttrLocation, buffers[1]);
 
     // Create a texture.
@@ -283,6 +292,16 @@ pub fn init() !void {
     const color: [4]f32 = .{ 0.7, 0.74, 0.99, 1.0 };
 
     var threaded: std.Io.Threaded = .init_single_threaded;
+    var space_debounce: bool = false;
+    var one_debounce: bool = false;
+    var f3_debounce: bool = false;
+    var slowdown: bool = false;
+    var rew: bool = false;
+    var rewStarted: bool = false;
+    var rewCursor: usize = 0;
+    var isEven : bool = false;
+    var writer = try std.Io.Writer.Allocating.initCapacity(gpa, 16000);
+    defer writer.deinit();
 
     zgui.backend.init(window);
     defer zgui.backend.deinit();
@@ -299,15 +318,53 @@ pub fn init() !void {
         // updateAndRender();
         glfw.pollEvents();
         const fb_size = window.getFramebufferSize();
-        _ = &fb_size;
-        if (window.getKey(.space) == .press) {
-            emulator.printCPUCore();
+        if (fb_size[0] != prevFBSize[0] or fb_size[1] != prevFBSize[1]) {
+            gen_triangles(vaos[0], positionAttrLocation, buffers[0], fb_size);
+            prevFBSize[0] = fb_size[0];
+            prevFBSize[1] = fb_size[1];
         }
-        // const jj = try glfw.joystickAsGamepad(joystick).?.getState();
+        if (window.getKey(.space) == .press and !space_debounce) { // TODO: macro or something?
+            space_debounce = true;
+            slowdown = ~slowdown;
+        }
+        if (space_debounce and window.getKey(.space) == .release) {
+            space_debounce = false;
+        }
+        if (window.getKey(.one) == .press  and !one_debounce) { // TODO: macro or something?
+            one_debounce = true;
+            _ = writer.writer.consumeAll();
+            try emulator.saveState(&writer.writer);
+            std.debug.print("Jesus saves\n", .{});
+        }
+        if (one_debounce and window.getKey(.one) == .release) {
+            one_debounce = false;
+        }
+        if (window.getKey(.F3) == .press  and !f3_debounce) { // TODO: macro or something?
+            f3_debounce = true;
+            var reader  = std.Io.Reader.fixed(writer.written());
+            try emulator.loadState(&reader);
+            std.debug.print("loading...\n", .{});
+        }
+        if (f3_debounce and window.getKey(.F3) == .release) {
+            f3_debounce = false;
+        }
+        rew = (window.getKey(.backspace) == .press);
 
-        const buttons = try glfw.getJoystickButtons(joystick);
-        const jstate: JoystickState = .{ .buttonA = buttons[0] == .press, .buttonB = buttons[1] == .press, .select = buttons[6] == .press, .start = buttons[7] == .press, .left = buttons[14] == .press, .right = buttons[12] == .press, .up = buttons[11] == .press, .down = buttons[13] == .press };
-        emulator.setJoystickState(jstate);
+        // const gamepad = try glfw.joystickAsGamepad(joystick).?.getState();
+        // const buttons = gamepad.buttons;
+
+        if (glfw.joystickPresent(joystick)) {
+            const buttons = try glfw.getJoystickButtons(joystick);
+            const jstate: JoystickState = .{ .buttonA = buttons[0] == .press, .buttonB = buttons[1] == .press, .select = buttons[6] == .press, .start = buttons[7] == .press, .left = buttons[14] == .press, .right = buttons[12] == .press, .up = buttons[11] == .press, .down = buttons[13] == .press };
+            emulator.setJoystickState(jstate);
+            const axes = try glfw.getJoystickAxes(joystick);
+            rew = rew | (axes[2] > -0.9);
+            // std.debug.print("axes: {d}\n", .{axes[2]});
+        }
+
+        if (slowdown) {
+            try std.Io.sleep(threaded.io(), std.Io.Duration.fromMilliseconds(@intFromFloat(1000 * (frame_time))), std.Io.Clock.real);
+        }
         // for (buttons, 0..) |b,i| {
         //     if (b == .press) {
         //       std.debug.print("joystick: {d}\n", .{i});
@@ -330,17 +387,46 @@ pub fn init() !void {
         // {
         //     gameState.game_started = true;
         // }
-        emulator.run_one_frame();
+        if (rew) {
+            if (rewStarted) {
+                if (rewind.hasNext(rewCursor)) {
+                    const imgD = rewind.getNextImage(rewCursor);
+                    @memcpy(@as([]u8, @ptrCast(&imageData)), imgD);
+                    const bytes = rewind.getNext(&rewCursor);
+                    var rewReader = std.Io.Reader.fixed(bytes);
+                    try emulator.loadState(&rewReader); // FIXME: no need to load every time
+                    // try std.Io.sleep(threaded.io(), std.Io.Duration.fromMilliseconds(@intFromFloat(1000 * (frame_time) * 2)), std.Io.Clock.real);
+                }
+            } else {
+                rewCursor = rewind.getCursor();
+                rewStarted = true;
+            }
+
+        } else {
+            rewStarted = false;
+           emulator.run_one_frame();
+           if (!isEven) {
+               _ = rewWriter.consumeAll();
+               try emulator.saveState(&rewWriter);
+               rewind.pushImageData(@ptrCast(&imageData));
+               rewind.pushData(rewWriter.buffer);
+            }
+        }
+        isEven = !isEven;
 
         // gl.useProgram(program);
         gl.bindVertexArray(vaos[0]);
 
         gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.clearColor(0.118, 0.118, 0.180, 1.0);
+        // gl.clearColor(0.118, 0.118, 0.180, 1.0);
+        gl.clearColor(0.0, 0.0, 0.0, 1.0);
 
         gl.uniform4fv(colorLocation, 1, color[0..]);
         // const ortho = zm.orthographicLhGl(1920.0, 1080.0, 0.0, 1.0);
-        const ortho = zm.orthographicOffCenterLhGl(0.0, @floatFromInt(fb_size[0]), 0.0, @floatFromInt(fb_size[1]), 0.0, 1.0);
+        // const scaling:f32 = @floatFromInt(@max(1, @as(usize, @intCast(fb_size[1])) / NES_HEIGHT));
+        // std.debug.print("scaling: {d}\n", .{scaling});
+        // const ortho = zm.orthographicOffCenterLhGl(0.0, @as(f32, @floatFromInt(NES_WIDTH)), 0.0, @as(f32, @floatFromInt(NES_HEIGHT)), 0.0, 1.0);
+        const ortho = zm.orthographicOffCenterLhGl(0.0, @as(f32, @floatFromInt(fb_size[0])), 0.0, @as(f32, @floatFromInt(fb_size[1])), 0.0, 1.0);
         // const ortho = zm.orthographicOffCenterLhGl(0.0, 2.0 * @as(f32, @floatFromInt(NES_WIDTH)), 0.0, 2.0 * @as(f32, @floatFromInt(NES_HEIGHT)), 0.0, 1.0);
         gl.uniformMatrix4fv(projection_matrix, 1, 0, zm.arrNPtr(&ortho));
         gl.bindTexture(gl.TEXTURE_2D, textures[0]);
@@ -398,28 +484,32 @@ pub fn init() !void {
     }
 }
 
-pub fn gen_triangles(vao: u32, positionAttrLocation: i32, positionBuffer: u32) void {
+pub fn gen_triangles(vao: u32, positionAttrLocation: i32, positionBuffer: u32, fb_size: [2]c_int) void {
     gl.bindVertexArray(vao);
     gl.enableVertexAttribArray(@bitCast(positionAttrLocation));
 
+    // TODO: someday do it with glortho..
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    const scaling:f32 = @floatFromInt(@max(1, @as(usize, @intCast(fb_size[1])) / NES_HEIGHT));
+    const left: f32 = (@as(f32, @floatFromInt(fb_size[0])) - scaling*NES_WIDTH) / 2.0;
+    const top: f32 = (@as(f32, @floatFromInt(fb_size[1])) - scaling*NES_HEIGHT) / 2.0;
 
     // 6 vertices for each brick,
     // let's do the paddle first
     var data: [12]f32 = .{0} ** 12;
-    data[0] = 0.0;
-    data[1] = 0.0;
-    data[2] = NES_WIDTH * 2;
-    data[3] = 0.0;
-    data[4] = NES_WIDTH * 2;
-    data[5] = NES_HEIGHT * 2;
+    data[0] = left;
+    data[1] = top;
+    data[2] = left + NES_WIDTH * scaling;
+    data[3] = top;
+    data[4] = left + NES_WIDTH * scaling;
+    data[5] = top + NES_HEIGHT * scaling;
 
-    data[6] = NES_WIDTH * 2;
-    data[7] = NES_HEIGHT * 2;
-    data[8] = 0.0;
-    data[9] = NES_HEIGHT * 2;
-    data[10] = 0.0;
-    data[11] = 0.0;
+    data[6] = left + NES_WIDTH * scaling;
+    data[7] = top + NES_HEIGHT * scaling;
+    data[8] = left;
+    data[9] = top + NES_HEIGHT * scaling;
+    data[10] = left;
+    data[11] = top;
 
     // const num_points: i32 = 6;
 

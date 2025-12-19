@@ -174,6 +174,8 @@ pub fn incrementY(self: *Ppu) void {
 }
 pub fn copyXPosition(self: *Ppu) void {
     if (self.renderingEnabled()) {
+             // self.t.horizontalNametable = @truncate(self.ppuCtrl.baseNametableAddress);
+             // self.t.verticalNametable = @truncate(self.ppuCtrl.baseNametableAddress >> 1);
         self.v.coarseXScroll = self.t.coarseXScroll;
         self.v.horizontalNametable = self.t.horizontalNametable;
     }
@@ -483,15 +485,17 @@ pub fn read(self: *Ppu, addr: u16) u8 {
         0x2005 => return 0, // Wx2
         0x2006 => return 0, // Wx2
         0x2007 => {
-            // var v: u15 = @bitCast(self.v);
-            // const res = self.ppu_read(v);
+            // const res = self.ppuReadBuff;
+            // var t: u15 = @bitCast(self.t);
+            // self.ppuReadBuff = self.ppu_read(t);
             // const incr = self.ppuCtrl.vramAddressIncrement;
-            // v +%= (~incr + (incr * @as(u15, 32)));
-            // self.v = @bitCast(v);
+            // t +%= (~incr + (incr * @as(u15, 32)));
             const res = self.ppuReadBuff;
             self.ppuReadBuff = self.ppu_read(self.t1); 
             const incr = self.ppuCtrl.vramAddressIncrement;
             self.t1 +%= (~incr + (incr * @as(u15, 32)));
+            self.t = @bitCast(self.t1);
+            self.v = self.t;
             return res;
         }, // R/W Vram data
         else => std.debug.panic("wrong address 0x{x} for PPU", .{addr}),
@@ -506,8 +510,10 @@ pub fn write(self: *Ppu, addr: u16, data: u8) void {
             if (!prevStatus and self.ppuCtrl.VBlankNMIEnable and self.ppuStatus.VBlank) {
                 self.cpu.nmi();
             }
-            self.t.horizontalNametable = @truncate(self.ppuCtrl.baseNametableAddress);
-            self.t.verticalNametable = @truncate(self.ppuCtrl.baseNametableAddress >> 1);
+            // if (self.renderingEnabled() and !self.ppuStatus.VBlank) {
+             self.t.horizontalNametable = @truncate(self.ppuCtrl.baseNametableAddress);
+             self.t.verticalNametable = @truncate(self.ppuCtrl.baseNametableAddress >> 1);
+                 // }
             // std.debug.print("x nametable update: {d}; sl: {d}, dot: {d}\n", .{self.t.horizontalNametable, self.scanline, self.dot});
             // std.debug.print("PPU: write to CTRL, {any}\n", .{self.ppuCtrl});
         }, // TODO: writes to this register are ignored until the first pre-render scanline.
@@ -532,34 +538,55 @@ pub fn write(self: *Ppu, addr: u16, data: u8) void {
             self.writeToggle +%= 1;
         }, // Wx2
         0x2006 => { // PPUAddr
+            // if (self.writeToggle == 0) { // high byte first
+            //     var bits: u15 = @bitCast(self.t);
+            //     bits = setBit(bits, 14, 0);
+            //     const d:u6 = @truncate(data);
+            //     const mask:u15 = 0b111111 << 8;
+            //     bits = (bits & ~mask) | (@as(u15,d) << 8);
+            //     self.t = @bitCast(bits);
+            // } else {
+            //     var bits: u15 = @bitCast(self.t);
+            //     const mask:u15 = 0b1111111 << 8;
+            //     bits = (bits & mask) | data;
+            //     self.t = @bitCast(bits);
+            // }
+            // self.v = self.t;
             if (self.writeToggle == 0) { // FIXME: t or v?
                 // high byte first
                 // var t: u15 = @bitCast(self.t);
                 // t = (t & 0x00FF) | (@as(u15, data) << 8) & 0x3fff;
                 // self.t = @bitCast(t);
                 self.t1 = (self.t1 & 0x00FF) | (@as(u15, data) << 8) & 0x3fff;
-                self.t = @bitCast(self.t1);
+                // self.t = @bitCast(self.t1);
             } else {
                 // var t: u15 = @bitCast(self.t);
                 // t = t & (0x7F00) | @as(u15, data);
                 // self.t = @bitCast(t);
                 self.t1 = self.t1 & (0x7F00) | @as(u15, data);
                 self.t = @bitCast(self.t1);
+                self.v = self.t;
+            // const foo: u15 = @bitCast(self.t);
+            // if (foo != self.t1) {
+            //     std.debug.print("!!\nt:  0x{x}\nt1: 0x{x}\n", .{foo, self.t1});
+            // }
+                 // self.t = @bitCast(self.t1);
             }
             self.writeToggle +%= 1;
         }, // Wx2
         0x2007 => { //PPUDATA - VRAM data
             // var t: u15 = @bitCast(self.t);
+            // if (t != self.t1) { // TODO: wtf?
+            //     std.debug.print("\nt:  0x{x}\nt1: 0x{x}\n", .{t, self.t1});
+            // }
             // self.ppu_write(@truncate(t), data);
             // const incr = self.ppuCtrl.vramAddressIncrement;
             // t +%= (~incr + (incr * @as(u15, 32)));
-            // self.t = @bitCast(t);
-            // if (self.t1 >= 0x1140 and self.t1 < 0x1148) {
-            //     std.debug.print("0x114x data: 0x{x}\n", .{data});
-            // }
             self.ppu_write(@truncate(self.t1), data);
             const incr = self.ppuCtrl.vramAddressIncrement;
             self.t1 +%= (~incr + (incr * @as(u15, 32)));
+            self.t = @bitCast(self.t1);
+            self.v = self.t;
         },
         else => std.debug.panic("wrong address 0x{x} for PPU", .{addr}),
     }
@@ -1103,4 +1130,79 @@ pub fn drawChrData(self: *Ppu) void {
         // sprite.yPosition
         // sprite.attrs.palette
     }
+}
+
+pub fn setBit(number: anytype, n: comptime_int, v: u1) @TypeOf(number) {
+    // Ensure n is within the bounds of the number's bit width
+    comptime {
+        if (n >= @typeInfo(@TypeOf(number)).int.bits) {
+            @compileError("Bit index 'n' is out of bounds for the given number type.");
+        }
+    }
+
+    const mask = @as(@TypeOf(number), 1) << n;
+
+    if (v == 1) {
+        return @as(@TypeOf(number), (number | mask));
+    } else {
+        return @as(@TypeOf(number), (number & ~mask));
+    }
+}
+
+// const PpuState = extern struct {
+// ppuCtrl: PPUCtrl = .{}, // W
+// ppuMask: PPUMask = .{}, // W
+// ppuStatus: PPUStatus = .{}, //R
+// oamAddr: u8 = 0, // W
+// v: V = .{}, 
+// t: V = .{},
+// t1: u15 = 0,
+// fineXScroll: u3 = 0,
+// writeToggle: u1 = 0,
+// sprites: [64]Sprite = .{Sprite{}} ** 64,
+// palette: [32]u6 = .{0} ** 32,
+// };
+pub fn byteSize(self: *Ppu) u64 {
+    _ = &self;
+    return (@sizeOf(PPUCtrl) + @sizeOf(PPUStatus) + @sizeOf(PPUMask) +
+           1 + 2 + 2 + 2 + 1 + 1 + (64*@sizeOf(Sprite)) + 32);
+}
+pub fn serialize(self: *Ppu, writer: *std.Io.Writer) !void {
+    try writer.writeStruct(self.ppuCtrl, .little);
+    try writer.writeStruct(self.ppuMask, .little);
+    try writer.writeStruct(self.ppuStatus, .little);
+    try writer.writeByte(self.oamAddr);
+    try writer.writeInt(u16, @as(u15, @bitCast(self.v)), .little);
+    try writer.writeInt(u16, @as(u15, @bitCast(self.t)), .little);
+    try writer.writeInt(u16, self.t1, .little);
+    try writer.writeInt(u8, self.fineXScroll, .little);
+    try writer.writeInt(u8, self.writeToggle, .little);
+    for (self.sprites) |s| {
+        try writer.writeStruct(s, .little);
+    }
+    for (self.palette) |p| {
+        try writer.writeInt(u8, p, .little);
+    }
+}
+pub fn deserialize(self: *Ppu, reader: *std.Io.Reader) !void  {
+    self.ppuCtrl = try reader.takeStruct(PPUCtrl, .little);
+    self.ppuMask = try reader.takeStruct(PPUMask, .little);
+    self.ppuStatus = try reader.takeStruct(PPUStatus, .little);
+    self.oamAddr = try reader.takeByte();
+    self.v = @bitCast(@as(u15, @truncate(try reader.takeInt(u16, .little))));
+    self.t = @bitCast(@as(u15, @truncate(try reader.takeInt(u16, .little))));
+    self.t1 = @bitCast(@as(u15, @truncate(try reader.takeInt(u16, .little))));
+    self.fineXScroll = @truncate(try reader.takeByte());
+    self.writeToggle = @truncate(try reader.takeByte());
+
+    for (0..64) |i| {
+        self.sprites[i] = try reader.takeStruct(Sprite, .little);
+    }
+    for (0..32) |i| {
+        self.palette[i] = @truncate(try reader.takeByte());
+    }
+    // const s = try reader.takeStruct(CpuState, .little);
+    // const end = pos + @sizeOf(CpuState);
+    // const s = std.mem.bytesAsValue(CpuState, buffer[pos..end]);
+    // self.A = s.A;self.X = s.X; self.Y = s.Y; self.PC = s.PC; self.S = s.S; self.P = s.P; self.SP = s.SP;
 }

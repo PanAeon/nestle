@@ -21,6 +21,30 @@ dmaDone: bool,
 pub fn init(memory: *MemoryController) Cpu {
     return .{ .A = 0, .X = 0, .Y = 0, .PC = 0, .S = 0, .P = Flags.empty(), .SP = 0xFF, .pageCrossed = 0x00, .irqFlag = 0, .nmiFlag = 0, .memory = memory, .dmaDone = false };
 }
+
+const CpuState = extern struct {
+    PC: u16, A:u8, X:u8, Y:u8, S:u8, P:Flags, SP:u8 
+};
+pub fn byteSize(self: *Cpu) u64 {
+    _ = &self;
+    return @sizeOf(CpuState);
+}
+pub fn serialize(self: *Cpu, writer: *std.Io.Writer) !void {
+    const state:CpuState = .{.A = self.A, .X = self.X, .Y = self.Y, .PC = self.PC, .S = self.S, .P = self.P, .SP = self.SP};
+    try writer.writeStruct(state, .little);
+
+    // const bytes_slice: []const u8 = std.mem.asBytes(&state);
+    // const end = pos + bytes_slice.len;
+    // @memcpy(buffer[pos..end], bytes_slice);
+    // return end;
+}
+pub fn deserialize(self: *Cpu, reader: *std.Io.Reader) !void  {
+    const s = try reader.takeStruct(CpuState, .little);
+    // const end = pos + @sizeOf(CpuState);
+    // const s = std.mem.bytesAsValue(CpuState, buffer[pos..end]);
+    self.A = s.A;self.X = s.X; self.Y = s.Y; self.PC = s.PC; self.S = s.S; self.P = s.P; self.SP = s.SP;
+}
+
 pub fn print(self: *Cpu) void {
     std.debug.print(
         \\regs: A:  0x{x}, X: 0x{x}, Y:  0x{x}

@@ -6,7 +6,7 @@ const expect = std.testing.expect;
 prgROM: []u8,
 chrROM: []u8,
 chrRAM: []u8,
-currentBank: u16 = 0,
+currentBank: u8 = 0,
 vram: []u8,
 mirroring: Mirroring,
 // chrRAM: 8kb?, mirror: vertical
@@ -33,7 +33,11 @@ pub fn destroy(ptr: *anyopaque, gpa: std.mem.Allocator) void {
 pub fn interface(self: *UxRom) Mapper {
     return .{
         .ptr = self,
-        .vtable = &.{ .read = read, .write = write, .ppu_read = ppu_read, .ppu_write = ppu_write, .destroy = destroy },
+        .vtable = &.{ .read = read, .write = write, .ppu_read = ppu_read, .ppu_write = ppu_write, .destroy = destroy,
+            .serialize = serialize,
+            .deserialize = deserialize,
+            .byteSize = byteSize
+        },
     };
 }
 
@@ -190,4 +194,21 @@ test "Vertical must mirror vertically" {
     try expect(mapper.ppu_read(0x28F0) == 7);
     mapper.ppu_write(0x28F0, 9);
     try expect(mapper.ppu_read(0x2CF0) == 9);
+}
+
+pub fn serialize(ptr: *anyopaque, writer: *std.Io.Writer) !void {
+    const m: *UxRom = @ptrCast(@alignCast(ptr));
+    try writer.writeByte(m.currentBank);
+    try writer.writeAll(m.chrRAM);
+    
+}
+pub fn deserialize(ptr: *anyopaque, reader: *std.Io.Reader) !void {
+    const m: *UxRom = @ptrCast(@alignCast(ptr));
+    m.currentBank = try reader.takeByte();
+    const slice = try reader.take(m.chrRAM.len);
+    @memcpy(m.chrRAM, slice);
+}
+pub fn byteSize(ptr: *anyopaque) u64 {
+    const m: *UxRom = @ptrCast(@alignCast(ptr));
+    return 1 + m.chrRAM.len;
 }

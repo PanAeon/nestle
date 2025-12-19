@@ -20,6 +20,7 @@ memoryController: MemoryController,
 cpu: Cpu,
 printCore: bool,
 pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
+     // var f = try std.fs.openFileAbsolute("/foo/snes/Duck Hunt (World).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Top Gun (USA) (Rev A).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Castlevania.USA.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Darkwing Duck (USA).nes", .{});
@@ -74,7 +75,22 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
     emu.cpu.SP = 0xFD;
     emu.cpu.P.InterrupDisable = true; // ???
     emu.warmup();
-    // std.debug.print("current bank: {d}", emu.mapper
+
+    // var arr = try std.ArrayList(u8).initCapacity(gpa, 16000);
+    // defer arr.deinit(gpa);
+    
+    // var buff: [16000]u8 = std.mem.zeroes([16000]u8);
+    // don't need allocating..
+    // var writer = try std.Io.Writer.Allocating.initCapacity(gpa, 16000);
+    // defer writer.deinit();
+    // 
+    // 
+    // std.debug.print("serialized bytes total: {d}\n", .{writer.written().len});
+    //
+    // var reader  = std.Io.Reader.fixed(writer.written());
+    // bp = emu.memoryController.deserialize(&buff, bp);
+    // std.debug.print("derialized bytes total: {d}\n", .{bp});
+    // // std.debug.print("current bank: {d}", emu.mapper
 
     // return emu;
 
@@ -94,6 +110,26 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
 pub fn deinit(self: *Emulator, gpa: std.mem.Allocator) void {
     self.apu.deinit(gpa);
     self.mapper.destroy(gpa);
+}
+
+pub fn saveState(self: *Emulator, writer: *std.Io.Writer) !void {
+    try self.cpu.serialize(writer);
+    try self.memoryController.serialize(writer);
+    try self.ppu.serialize(writer);
+    try writer.writeAll(&self.vram);
+    try self.mapper.serialize(writer);
+}
+
+pub fn loadState(self: *Emulator, reader: *std.Io.Reader) !void {
+    try self.cpu.deserialize(reader);
+    try self.memoryController.deserialize(reader);
+    try self.ppu.deserialize(reader);
+    @memcpy(&self.vram, try reader.take(self.vram.len));
+    try self.mapper.deserialize(reader);
+}
+pub fn byteSize(self: *Emulator) u64 {
+    return self.cpu.byteSize() + self.memoryController.byteSize() +
+      self.ppu.byteSize() + self.vram.len + self.mapper.byteSize();
 }
 
 pub fn setJoystickState(self: *Emulator, state: Controller.JoystickState) void {

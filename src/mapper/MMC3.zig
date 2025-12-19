@@ -33,7 +33,11 @@ pub fn deinit(ptr: *anyopaque, gpa: std.mem.Allocator) void {
 pub fn interface(self: *MMC3) Mapper {
     return .{
         .ptr = self,
-        .vtable = &.{ .read = read, .write = write, .ppu_read = ppu_read, .ppu_write = ppu_write, .deinit = deinit },
+        .vtable = &.{ .read = read, .write = write, .ppu_read = ppu_read, .ppu_write = ppu_write, .deinit = deinit,
+            .serialize = serialize,
+            .deserialize = deserialize,
+            .byteSize = byteSize
+        },
     };
 }
 
@@ -201,4 +205,25 @@ test "Vertical must mirror vertically" {
     try expect(mapper.ppu_read(0x28F0) == 7);
     mapper.ppu_write(0x28F0, 9);
     try expect(mapper.ppu_read(0x2CF0) == 9);
+}
+
+pub fn serialize(ptr: *anyopaque, writer: *std.Io.Writer) !void {
+    // const m: *NRom = @ptrCast(@alignCast(ptr));
+    // try writer.writeAll(&m.prgRAM);
+    _ = &ptr;
+    _ = &writer;
+    @panic("not impl");
+    
+}
+pub fn deserialize(ptr: *anyopaque, reader: *std.Io.Reader) !void {
+    // const m: *NRom = @ptrCast(@alignCast(ptr));
+    // const slice = try reader.take(2048);
+    // @memcpy(&m.prgRAM, slice);
+    _ = &ptr;
+    _ = &reader;
+    @panic("not impl");
+}
+pub fn byteSize(ptr: *anyopaque) u64 {
+    _ = &ptr;
+    return 2048;
 }

@@ -5,7 +5,7 @@ const std = @import("std");
 // https://www.nesdev.org/wiki/MMC1
 const MMC1 = @This();
 
-const ControlRegister = packed struct {
+const ControlRegister = packed struct(u5) {
 //     Nametable arrangement: (0: one-screen, lower bank; 1: one-screen, upper bank;
 //                2: horizontal arrangement ("vertical mirroring", PPU A10); 
 //                3: vertical arrangement ("horizontal mirroring", PPU A11) )
@@ -30,7 +30,7 @@ const PrgBank = packed struct {
        // 0: PRG-RAM enabled
        // 1: PRG-RAM disabled
        //
-    r: u1 = 0 
+    r: u1 = 0,
 };
 
 prgROM: []u8,
@@ -80,7 +80,11 @@ pub fn destroy(ptr: *anyopaque, gpa: std.mem.Allocator) void {
 pub fn interface(self: *MMC1) Mapper {
     return .{
         .ptr = self,
-        .vtable = &.{ .read = read, .write = write, .ppu_read = ppu_read, .ppu_write = ppu_write, .destroy = destroy },
+        .vtable = &.{ .read = read, .write = write, .ppu_read = ppu_read, .ppu_write = ppu_write, .destroy = destroy,
+            .serialize = serialize,
+            .deserialize = deserialize,
+            .byteSize = byteSize
+        },
     };
 }
 
@@ -323,4 +327,32 @@ pub fn setBit(number: anytype, n: u3, v: u1) @TypeOf(number) {
     } else {
         return @as(@TypeOf(number), (number & ~mask));
     }
+}
+
+pub fn serialize(ptr: *anyopaque, writer: *std.Io.Writer) !void {
+    const m: *MMC1 = @ptrCast(@alignCast(ptr));
+    try writer.writeAll(m.chrRAM);
+    try writer.writeInt(u64, m.lastBankNum, .little);
+    try writer.writeByte(m.buffer);
+    try writer.writeByte(m.currentBit);
+    try writer.writeByte(@as(u5, @bitCast(m.controlRegister)));
+    try writer.writeByte(m.chrBank0Register);
+    try writer.writeByte(m.chrBank1Register);
+    try writer.writeByte(@as(u5, @bitCast(m.prgBankRegister)));
+}
+pub fn deserialize(ptr: *anyopaque, reader: *std.Io.Reader) !void {
+    const m: *MMC1 = @ptrCast(@alignCast(ptr));
+    const slice = try reader.take(m.chrRAM.len);
+    @memcpy(m.chrRAM, slice);
+    m.lastBankNum = try reader.takeInt(u64, .little);
+    m.buffer = @truncate(try reader.takeByte());
+    m.currentBit = @truncate(try reader.takeByte());
+    m.controlRegister = @bitCast(@as(u5, @truncate(try reader.takeByte())));
+    m.chrBank0Register = @truncate(try reader.takeByte());
+    m.chrBank1Register = @truncate(try reader.takeByte());
+    m.prgBankRegister = @bitCast(@as(u5, @truncate(try reader.takeByte())));
+}
+pub fn byteSize(ptr: *anyopaque) u64 {
+    const m: *MMC1 = @ptrCast(@alignCast(ptr));
+    return m.chrRAM.len + 4 + 6;
 }
