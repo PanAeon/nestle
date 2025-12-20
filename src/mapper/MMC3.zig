@@ -129,7 +129,7 @@ pub fn write(ptr: *anyopaque, addr: u16, data: u8) void {
             if (addr & 0x1 == 0) {
                 m.irqLatch = data;
             } else {
-                m.irqCounter = m.irqLatch;
+                m.irqCounter = m.irqLatch +% 1;
                 // irq reload <- clears the MMC3 IRQ counter immediately,
             }
         },
@@ -243,7 +243,7 @@ pub fn onScanline(ptr: *anyopaque) bool {
     if (m.irqCounter > 0) {
         m.irqCounter -=1;
     } else {
-        m.irqCounter = m.irqLatch;
+        m.irqCounter = m.irqLatch +% 1;
         if (m.irqEnabled) {
             return true;
         }

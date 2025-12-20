@@ -355,7 +355,7 @@ pub fn deserialize(ptr: *anyopaque, reader: *std.Io.Reader) !void {
 }
 pub fn byteSize(ptr: *anyopaque) u64 {
     const m: *MMC1 = @ptrCast(@alignCast(ptr));
-    return m.chrRAM.len + 4 + 6;
+    return m.chrRAM.len + 8 + 6;
 }
 pub fn onScanline(_: *anyopaque) bool {
     return false;

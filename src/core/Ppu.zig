@@ -227,17 +227,15 @@ pub fn fetchSprites(self: *Ppu) void {
                 const idx = sprite.tileIdx & 0xfe;
                 break :brk @as(u16, 16) * idx + table + (16 * @as(u16,@intFromBool(isUpperPart))); 
             };
-        const spriteLine = scanline - sprite.yPosition - (8*@as(u8, @intFromBool(isUpperPart)));
+        const spriteLine = if (sprite.attrs.flipVertically)
+              7 - (scanline - sprite.yPosition - (8*@as(u8, @intFromBool(isUpperPart))))
+            else 
+              scanline - sprite.yPosition - (8*@as(u8, @intFromBool(isUpperPart)));
         var pixelsLow: u8 = 0;
         var pixelsHigh: u8 = 0;
 
-        if (sprite.attrs.flipVertically) {
-            pixelsLow = self.ppu_read(@intCast(offset  - (spriteLine )));
-            pixelsHigh |= @as(u8, self.ppu_read(@intCast(offset + 8 - (spriteLine ))));
-        } else {
-            pixelsLow = self.ppu_read(@intCast(offset + (spriteLine )));
-            pixelsHigh |= @as(u8, self.ppu_read(@intCast(offset + 8 + (spriteLine ))));
-        }
+        pixelsLow = self.ppu_read(@intCast(offset + (spriteLine )));
+        pixelsHigh |= @as(u8, self.ppu_read(@intCast(offset + 8 + (spriteLine ))));
         for (0..8) |i| {
             const _x: usize = if (sprite.attrs.flipHorisontally) i else 7 - i;
             if (sprite.xPosition + _x < 256) {
@@ -384,7 +382,7 @@ pub fn drawVisibleScanline(self: *Ppu) void {
                 // const _colours: [4]u32 = .{ 0xFF000000, 0xFF777777, 0xFFA0A0A0, 0xFFFFFFFF };
                 // const colour = _colours[pixel];
                 const sd = self.scanlineSpriteBuffer[x];
-                if (pixel == 0) {
+                if (pixel == 0 or !self.ppuMask.enableBackgroundRendering) {
                    // draw backdrop
                    if ( !sd.present ) {
                        self.outputBuffer[pos] = SystemPalette[self.palette[0]];
@@ -395,7 +393,7 @@ pub fn drawVisibleScanline(self: *Ppu) void {
                    if (sd.present and sd.spriteIdx == 0) {
                        self.ppuStatus.sprite0Hit = true;
                    }
-                   if (!sd.present or sd.behindBackground) {
+                   if (!sd.present or sd.behindBackground or !self.ppuMask.enableSpriteRendering) {
                        self.outputBuffer[pos] = SystemPalette[colorIdx];
                    } else {
                        self.outputBuffer[pos] = SystemPalette[sd.colorIdx];

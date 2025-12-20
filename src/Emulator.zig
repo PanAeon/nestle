@@ -46,8 +46,11 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
     // var f = try std.fs.openFileAbsolute("/foo/snes/testroms/palette_fill.nes", .{});
     // mmc3:
       // var f = try std.fs.openFileAbsolute("/foo/snes/Power Blade 2 (USA).nes", .{});
-      var f = try std.fs.openFileAbsolute("/foo/snes/Jurassic Park (USA).nes", .{});
+      // var f = try std.fs.openFileAbsolute("/foo/snes/Jurassic Park (USA).nes", .{});
       // var f = try std.fs.openFileAbsolute("/foo/snes/Alien 3 (USA).nes", .{});
+      // var f = try std.fs.openFileAbsolute("/foo/snes/Earth Bound (USA) (Proto).nes", .{});
+    //
+      var f = try std.fs.openFileAbsolute("/foo/snes/scanline/scanline.nes", .{});
     defer f.close();
     // _ = try nestle.ines.hasMagicByte(&f);
     emu.* = Emulator{
