@@ -38,7 +38,7 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
     // var f = try std.fs.openFileAbsolute("/foo/snes/Metal Gear (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Jurassic Park (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/thwaite.nes", .{});
-    // var f = try std.fs.openFileAbsolute("/foo/snes/Super Mario Bros. (World).nes", .{});
+    var f = try std.fs.openFileAbsolute("/foo/snes/Super Mario Bros. (World).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/nestest.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/sprite.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/controller.nes", .{});
@@ -50,7 +50,7 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
       // var f = try std.fs.openFileAbsolute("/foo/snes/Alien 3 (USA).nes", .{});
       // var f = try std.fs.openFileAbsolute("/foo/snes/Earth Bound (USA) (Proto).nes", .{});
     //
-      var f = try std.fs.openFileAbsolute("/foo/snes/scanline/scanline.nes", .{});
+      // var f = try std.fs.openFileAbsolute("/foo/snes/scanline/scanline.nes", .{});
     defer f.close();
     // _ = try nestle.ines.hasMagicByte(&f);
     emu.* = Emulator{
@@ -72,7 +72,7 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
     emu.controller = Controller.init();
     emu.memoryController = MemoryController{ .mapper = emu.mapper, .apu = &emu.apu, .ppu = &emu.ppu, .controller = &emu.controller };
     emu.ppu.memoryController = &emu.memoryController;
-    emu.apu.memoryController = &emu.memoryController;
+    emu.apu.setMemoryController(&emu.memoryController);
     emu.cpu = Cpu.init(&emu.memoryController);
     emu.ppu.cpu = &emu.cpu;
     const low: u16 = emu.memoryController.read(0xFFFC);
@@ -156,6 +156,8 @@ pub fn run_one_frame(self: *Emulator) void {
     const CpuFreq: f32 = 1789773.0; // 1.789 Mhz
     const FrameRate: f32 = 60.0;
     const CyclesPerFrame: usize = @intFromFloat(CpuFreq / FrameRate);
+    // std.debug.print("cycles per frame: {d}\n", .{CyclesPerFrame});
+    // 29829
     // const CyclesPerFrameActive: usize = CyclesPerFrame * 240 / 262;
     // const CyclesPerFrameBlank: usize = CyclesPerFrame - CyclesPerFrameActive;
     // const CpuAvgCycle: f32 = 3.0;
@@ -188,12 +190,14 @@ pub fn run_one_frame(self: *Emulator) void {
         const instr = self.cpu.decode2(self.cpu.PC);
         const c = self.cpu.interpret(instr);
         cycles += c;
+        self.apu.run(cycles);
         ppuBudget += 3*c;
         while (ppuBudget > 0) {
             self.ppu.run();
             ppuBudget -= 1;
         }
     }
+    self.apu.endFrame();
     // self.apu.clock(10);
     // std.debug.print("elapsed: {d} cycles\n", .{cycles});
 }
