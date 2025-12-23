@@ -206,8 +206,11 @@ pub fn serialize(ptr: *anyopaque, writer: *std.Io.Writer) !void {
 pub fn deserialize(ptr: *anyopaque, reader: *std.Io.Reader) !void {
     const m: *UxRom = @ptrCast(@alignCast(ptr));
     m.currentBank = try reader.takeByte();
-    const slice = try reader.take(m.chrRAM.len);
-    @memcpy(m.chrRAM, slice);
+    var writer = std.Io.Writer.fixed(m.chrRAM);
+    try reader.streamExact(&writer, m.chrRAM.len);
+    // std.debug.assert(n == m.chrRAM.len);
+    // const slice = try reader.take(m.chrRAM.len);
+    // @memcpy(m.chrRAM, slice);
 }
 pub fn byteSize(ptr: *anyopaque) u64 {
     const m: *UxRom = @ptrCast(@alignCast(ptr));

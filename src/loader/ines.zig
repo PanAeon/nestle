@@ -46,8 +46,7 @@ pub fn readHeader(f: *File) !Header {
 }
 pub const RomInfo = struct {
     mapper: Mapper,
-    // mapper: u8,
-    // nametableArragement: u1
+    romCrc32: u32, 
 };
 // std.ascii.hexEscape(bytes: []const u8, case: Case)
 // memory owned by caller
@@ -105,25 +104,31 @@ pub fn readRom(gpa: std.mem.Allocator, f: *File, vram: []u8) !RomInfo {
         try gpa.alloc(u8, 0x2000) // 8kb
     else
         &.{};
+    const romCrc32 = std.hash.Crc32.hash(prgROM);
+    std.debug.print("rom crc32: {X:0>8}\n", .{romCrc32});
     for (chrRAM) |*b| {
         b.* = 0;
     }
     switch (mapper) {
         0 => {
             var nrom = try Mapper.NRom.create(gpa, prgROM, chrROM, vram, mirroring);
-            return .{ .mapper = nrom.interface() };
+            return .{ .mapper = nrom.interface(), .romCrc32 = romCrc32 };
         },
         1 => {
             var mmc1 = try Mapper.MMC1.create(gpa, prgROM, chrROM, chrRAM, vram, mirroring);
-            return .{ .mapper = mmc1.interface() };
+            return .{ .mapper = mmc1.interface(), .romCrc32 = romCrc32 };
         },
         2 => {
             var uxRom = try Mapper.UxRom.create(gpa, prgROM, chrROM, chrRAM, vram, mirroring);
-            return .{ .mapper = uxRom.interface() };
+            return .{ .mapper = uxRom.interface(), .romCrc32 = romCrc32 };
         },
         4 => {
             var mmc3 = try Mapper.MMC3.create(gpa, prgROM, chrROM, vram, mirroring);
-            return .{ .mapper = mmc3.interface() };
+            return .{ .mapper = mmc3.interface(), .romCrc32 = romCrc32 };
+        },
+        7 => {
+            var axRom = try Mapper.AxRom.create(gpa, prgROM, chrROM, chrRAM, vram);
+            return .{ .mapper = axRom.interface(), .romCrc32 = romCrc32 };
         },
         else => std.debug.panic("Unknown mapper {d}", .{header.flags6.lowerNybbleOfMapper}),
     }

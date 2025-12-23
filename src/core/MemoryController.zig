@@ -81,6 +81,10 @@ pub fn serialize(self: *MemoryController, writer: *std.Io.Writer) !void {
     // return end;
 }
 pub fn deserialize(self: *MemoryController, reader: *std.Io.Reader) !void  {
-    const slice = try reader.take(self.internalRam.len);
-    @memcpy(&self.internalRam, slice);
+    var writer = std.Io.Writer.fixed(&self.internalRam);
+    try reader.streamExact(&writer, self.internalRam.len);
+    // std.debug.print("n: {d}\n", .{n});
+    // std.debug.assert(n == self.internalRam.len);
+    // const slice = try reader.take(self.internalRam.len);
+    // @memcpy(&self.internalRam, slice);
 }

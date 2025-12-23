@@ -19,6 +19,7 @@ controller: Controller,
 memoryController: MemoryController,
 cpu: Cpu,
 printCore: bool,
+romCrc32: u32 = 0,
 pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
      // var f = try std.fs.openFileAbsolute("/foo/snes/Duck Hunt (World).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Top Gun (USA) (Rev A).nes", .{});
@@ -38,12 +39,13 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
     // var f = try std.fs.openFileAbsolute("/foo/snes/Metal Gear (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Jurassic Park (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/thwaite.nes", .{});
-    var f = try std.fs.openFileAbsolute("/foo/snes/Super Mario Bros. (World).nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/Super Mario Bros. (World).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/nestest.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/sprite.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/controller.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Total.Recall.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/testroms/palette_fill.nes", .{});
+     var f = try std.fs.openFileAbsolute("/foo/snes/Battletoads (USA).nes", .{});
     // mmc3:
       // var f = try std.fs.openFileAbsolute("/foo/snes/Power Blade 2 (USA).nes", .{});
       // var f = try std.fs.openFileAbsolute("/foo/snes/Jurassic Park (USA).nes", .{});
@@ -65,6 +67,7 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
     };
     const romInfo = try ines.readRom(gpa, &f, &emu.vram);
     emu.mapper = romInfo.mapper;
+    emu.romCrc32 = romInfo.romCrc32;
     emu.printCore = false;
 
     emu.apu = try Apu.init(gpa);
@@ -126,11 +129,13 @@ pub fn saveState(self: *Emulator, writer: *std.Io.Writer) !void {
     try self.mapper.serialize(writer);
 }
 
+// FIXME: reader.take assumes that buffer is at least len N
 pub fn loadState(self: *Emulator, reader: *std.Io.Reader) !void {
     try self.cpu.deserialize(reader);
     try self.memoryController.deserialize(reader);
     try self.ppu.deserialize(reader);
-    @memcpy(&self.vram, try reader.take(self.vram.len));
+    var writer = std.Io.Writer.fixed(&self.vram);
+    try reader.streamExact(&writer, self.vram.len);
     try self.mapper.deserialize(reader);
 }
 pub fn byteSize(self: *Emulator) u64 {
@@ -335,4 +340,68 @@ pub fn run_until(self: *Emulator, pc: u16) usize {
 }
 pub fn printCPUCore(self: *Emulator) void {
     self.printCore = true;
+}
+
+pub fn saveStateToFile(self: *Emulator, allocator: std.mem.Allocator, slotNumber: u8) !void {
+    const home_dir = try std.process.getEnvVarOwned(allocator, "HOME");
+    defer allocator.free(home_dir);
+    const savedir_path = try std.fs.path.join(allocator, &.{home_dir, ".config/nestle/saves"});
+    defer allocator.free(savedir_path);
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    const io = threaded.ioBasic();
+    std.Io.Dir.cwd().access(io, savedir_path, .{.read = true, .write = true}) catch {
+        try std.Io.Dir.cwd().makePath(io, savedir_path);
+    };
+    var filenameBuf: [256]u8 = std.mem.zeroes([256]u8);
+    const filename = try std.fmt.bufPrint(&filenameBuf, "{X:0>8}.{d}.save", .{self.romCrc32, slotNumber});
+    const filepath = try std.fs.path.join(allocator, &.{savedir_path, filename});
+    defer allocator.free(filepath);
+    var exists = true;
+    std.Io.Dir.cwd().access(io, filepath, .{}) catch {
+        exists = false;
+    };
+    if (exists) {
+        const backup_path = try std.mem.join(allocator, &.{}, &.{filepath, ".bck"});
+        defer allocator.free(backup_path);
+        try std.fs.copyFileAbsolute(filepath, backup_path, .{});
+    }
+    const _file = try std.Io.Dir.cwd().createFile(io, filepath, .{});
+    defer _file.close(io);
+    const file = std.fs.File.adaptFromNewApi(_file);
+    var file_buffer: [64*1024]u8 = std.mem.zeroes([64*1024]u8);
+    var writer = file.writer(&file_buffer);
+    try self.saveState(&writer.interface);
+    try writer.interface.flush();
+    std.debug.print("Jesus saves: {s}\n", .{filepath});
+}
+
+pub fn loadStateFromFile(self: *Emulator, allocator: std.mem.Allocator, slotNumber: u8) !void {
+    const home_dir = try std.process.getEnvVarOwned(allocator, "HOME");
+    defer allocator.free(home_dir);
+    const savedir_path = try std.fs.path.join(allocator, &.{home_dir, ".config/nestle/saves"});
+    defer allocator.free(savedir_path);
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    const io = threaded.ioBasic();
+    std.Io.Dir.cwd().access(io, savedir_path, .{.read = true, .write = true}) catch {
+        try std.Io.Dir.cwd().makePath(io, savedir_path);
+    };
+    var filenameBuf: [256]u8 = std.mem.zeroes([256]u8);
+    const filename = try std.fmt.bufPrint(&filenameBuf, "{X:0>8}.{d}.save", .{self.romCrc32, slotNumber});
+    const filepath = try std.fs.path.join(allocator, &.{savedir_path, filename});
+    defer allocator.free(filepath);
+    var exists = true;
+    std.Io.Dir.cwd().access(io, filepath, .{}) catch {
+        exists = false;
+    };
+    if (exists) {
+        const _file = try std.Io.Dir.cwd().openFile(io, filepath, .{.mode = .read_only});
+        defer _file.close(io);
+        var file_buffer: [64*1024]u8 = std.mem.zeroes([64*1024]u8);
+        var reader = _file.reader(io, &file_buffer);
+        try self.loadState(&reader.interface);
+        std.debug.print("Three hot loads\n", .{});
+    } else {
+        std.debug.print("no save at slot: {d}\n", .{slotNumber});
+    }
+
 }

@@ -7,7 +7,7 @@ prgROM: []u8,
 chrROM: []u8,
 vram: []u8,
 mirroring: NametableArragnment,
-prgRAM: [2048]u8, // or 4k in Family Basic only
+prgRAM: [2048]u8,
 isNrom256: bool = false,
 
 pub fn create(gpa: std.mem.Allocator, prgROM: []u8, chrROM: []u8, vram: []u8, mirroring: NametableArragnment) !*NRom {
@@ -183,8 +183,8 @@ pub fn serialize(ptr: *anyopaque, writer: *std.Io.Writer) !void {
 }
 pub fn deserialize(ptr: *anyopaque, reader: *std.Io.Reader) !void {
     const m: *NRom = @ptrCast(@alignCast(ptr));
-    const slice = try reader.take(2048);
-    @memcpy(&m.prgRAM, slice);
+    var writer = std.Io.Writer.fixed(&m.prgRAM);
+    try reader.streamExact(&writer, m.prgRAM.len);
 }
 pub fn byteSize(ptr: *anyopaque) u64 {
     _ = &ptr;

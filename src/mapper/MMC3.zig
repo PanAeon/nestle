@@ -264,8 +264,8 @@ pub fn serialize(ptr: *anyopaque, writer: *std.Io.Writer) !void {
 }
 pub fn deserialize(ptr: *anyopaque, reader: *std.Io.Reader) !void {
     const m: *MMC3 = @ptrCast(@alignCast(ptr));
-    const slice = try reader.take(m.prgRAM.len);
-    @memcpy(&m.prgRAM, slice);
+    var writer = std.Io.Writer.fixed(&m.prgRAM);
+    try reader.streamExact(&writer, m.prgRAM.len);
     m.nametableArrangement = @enumFromInt(try reader.takeByte());
     m.bankSelect = @bitCast(try reader.takeByte());
     const slice2 = try reader.take(8);

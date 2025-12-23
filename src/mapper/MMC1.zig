@@ -343,8 +343,9 @@ pub fn serialize(ptr: *anyopaque, writer: *std.Io.Writer) !void {
 }
 pub fn deserialize(ptr: *anyopaque, reader: *std.Io.Reader) !void {
     const m: *MMC1 = @ptrCast(@alignCast(ptr));
-    const slice = try reader.take(m.chrRAM.len);
-    @memcpy(m.chrRAM, slice);
+    // const slice = try reader.take(m.chrRAM.len);
+    var writer = std.Io.Writer.fixed(m.chrRAM);
+    try reader.streamExact(&writer, m.chrRAM.len);
     m.lastBankNum = try reader.takeInt(u64, .little);
     m.buffer = @truncate(try reader.takeByte());
     m.currentBit = @truncate(try reader.takeByte());

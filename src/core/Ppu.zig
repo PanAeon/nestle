@@ -560,12 +560,16 @@ pub fn write(self: *Ppu, addr: u16, data: u8) void {
                 // var t: u15 = @bitCast(self.t);
                 // t = (t & 0x00FF) | (@as(u15, data) << 8) & 0x3fff;
                 // self.t = @bitCast(t);
+                // self.t1 = @bitCast(self.t);
                 self.t1 = (self.t1 & 0x00FF) | (@as(u15, data) << 8) & 0x3fff;
+                self.t = @bitCast(self.t1);
+                self.v = self.t;
                 // self.t = @bitCast(self.t1);
             } else {
                 // var t: u15 = @bitCast(self.t);
                 // t = t & (0x7F00) | @as(u15, data);
                 // self.t = @bitCast(t);
+                // self.t1 = @bitCast(self.t);
                 self.t1 = self.t1 & (0x7F00) | @as(u15, data);
                 self.t = @bitCast(self.t1);
                 self.v = self.t;

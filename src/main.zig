@@ -144,6 +144,9 @@ pub fn init() !void {
     try Emulator.init(gpa, &imageData, &emulator);
     defer emulator.deinit(gpa);
 
+    // try emulator.saveStateToFile(gpa, 1);
+    // try emulator.loadStateFromFile(gpa, 1);
+
     const rewBuffer = try gpa.alloc(u8, emulator.byteSize());
     defer gpa.free(rewBuffer);
     var rewWriter = std.Io.Writer.fixed(rewBuffer);
@@ -295,13 +298,21 @@ pub fn init() !void {
     var space_debounce: bool = false;
     var one_debounce: bool = false;
     var f3_debounce: bool = false;
+    var save_debounce: bool = false;
+    var load_debounce: bool = false;
+    _ = &save_debounce;
+    _ = &load_debounce;
+    var currentSlot: u8 = 1;
     var slowdown: bool = false;
     var rew: bool = false;
     var rewStarted: bool = false;
     var rewCursor: usize = 0;
     var isEven : bool = false;
-    var writer = try std.Io.Writer.Allocating.initCapacity(gpa, 16000);
-    defer writer.deinit();
+    // var writer = try std.Io.Writer.Allocating.initCapacity(gpa, 16000);
+    // defer writer.deinit();
+    var textBuffer: [1024]u8 = std.mem.zeroes([1024]u8);
+    var textTimeout: u64 = 0;
+    var text: []u8 = &.{};
 
     zgui.backend.init(window);
     defer zgui.backend.deinit();
@@ -330,25 +341,29 @@ pub fn init() !void {
         if (space_debounce and window.getKey(.space) == .release) {
             space_debounce = false;
         }
-        if (window.getKey(.one) == .press  and !one_debounce) { // TODO: macro or something?
-            one_debounce = true;
-            _ = writer.writer.consumeAll();
-            try emulator.saveState(&writer.writer);
-            std.debug.print("Jesus saves\n", .{});
-        }
+        // if (window.getKey(.one) == .press  and !one_debounce) { // TODO: macro or something?
+        //     one_debounce = true;
+        //     _ = writer.writer.consumeAll();
+        //     try emulator.saveState(&writer.writer);
+        //     std.debug.print("Jesus saves\n", .{});
+        // }
         if (one_debounce and window.getKey(.one) == .release) {
             one_debounce = false;
         }
-        if (window.getKey(.F3) == .press  and !f3_debounce) { // TODO: macro or something?
-            f3_debounce = true;
-            var reader  = std.Io.Reader.fixed(writer.written());
-            try emulator.loadState(&reader);
-            std.debug.print("loading...\n", .{});
-        }
+        // if (window.getKey(.F3) == .press  and !f3_debounce) { // TODO: macro or something?
+        //     f3_debounce = true;
+        //     var reader  = std.Io.Reader.fixed(writer.written());
+        //     try emulator.loadState(&reader);
+        //     std.debug.print("loading...\n", .{});
+        // }
         if (f3_debounce and window.getKey(.F3) == .release) {
             f3_debounce = false;
         }
         rew = (window.getKey(.backspace) == .press);
+
+        if (window.getKey(.one) == .press) {
+            currentSlot = 1;
+        }
 
         // const gamepad = try glfw.joystickAsGamepad(joystick).?.getState();
         // const buttons = gamepad.buttons;
@@ -359,7 +374,20 @@ pub fn init() !void {
             emulator.setJoystickState(jstate);
             const axes = try glfw.getJoystickAxes(joystick);
             rew = rew | (axes[2] > -0.9);
+            // std.debug.print("buttons: {any}\n", .{buttons});
             // std.debug.print("axes: {d}\n", .{axes[2]});
+            if (buttons[4] == .press and !load_debounce) {
+                try emulator.loadStateFromFile(gpa, currentSlot);
+                text = try std.fmt.bufPrint(&textBuffer, "state {d} loaded", .{currentSlot});
+                textTimeout = 60*3;
+            }
+            load_debounce = buttons[4] == .press;
+            if (buttons[5] == .press and !save_debounce) {
+                try emulator.saveStateToFile(gpa, currentSlot);
+                text = try std.fmt.bufPrint(&textBuffer, "state {d} saved", .{currentSlot});
+                textTimeout = 60*3;
+            }
+            save_debounce = buttons[5] == .press;
         }
 
         if (slowdown) {
@@ -447,7 +475,13 @@ pub fn init() !void {
         // const fb_size = window.getFramebufferSize();
         // std.debug.print("fb size: {d}, {d}\n", .{fb_size[0], fb_size[1]});
 
-        // zgui.backend.newFrame(@intCast(fb_size[0]), @intCast(fb_size[1]));
+        zgui.backend.newFrame(@intCast(fb_size[0]), @intCast(fb_size[1]));
+        if (textTimeout > 0) {
+            zgui.getForegroundDrawList().addText(
+                .{1.0, 1.0},
+                zgui.colorConvertFloat3ToU32(.{1.0, 1.0, 1.0}), "{s}", .{text});
+            textTimeout -=1;
+        }
 
         // zgui.showDemoWindow(null);
 
@@ -478,7 +512,7 @@ pub fn init() !void {
         // }
         // zgui.end();
 
-        // zgui.backend.draw();
+        zgui.backend.draw();
 
         window.swapBuffers();
     }
