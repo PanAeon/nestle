@@ -130,7 +130,12 @@ pub fn readRom(gpa: std.mem.Allocator, f: *File, vram: []u8) !RomInfo {
             var axRom = try Mapper.AxRom.create(gpa, prgROM, chrROM, chrRAM, vram);
             return .{ .mapper = axRom.interface(), .romCrc32 = romCrc32 };
         },
-        else => std.debug.panic("Unknown mapper {d}", .{header.flags6.lowerNybbleOfMapper}),
+        71 => {
+            // Codemasters
+            var uxRom = try Mapper.Camerica.create(gpa, prgROM, chrROM, chrRAM, vram, mirroring);
+            return .{ .mapper = uxRom.interface(), .romCrc32 = romCrc32 };
+        },
+        else => std.debug.panic("Unknown mapper {d}", .{mapper}),
     }
     // return .{
     //     .mapper = mapper,

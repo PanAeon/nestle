@@ -21,6 +21,14 @@ cpu: Cpu,
 printCore: bool,
 romCrc32: u32 = 0,
 pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
+     var f = try std.fs.openFileAbsolute("/foo/snes/Blaster Master (USA).nes", .{});
+     // var f = try std.fs.openFileAbsolute("/foo/snes/Castlevania II - Simon's Quest (USA).nes", .{});
+     // var f = try std.fs.openFileAbsolute("/foo/snes/Robin Hood - Prince of Thieves (USA) (Rev 1).nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/7-dmc_basics.nes", .{});
+    // var f = try std.fs.openFileAbsolute("/foo/snes/Teenage Mutant Ninja Turtles (USA).nes", .{});
+     // var f = try std.fs.openFileAbsolute("/foo/snes/DuckTales 2 (USA).nes", .{});
+     // var f = try std.fs.openFileAbsolute("/foo/snes/Flintstones, The - The Rescue of Dino & Hoppy (USA).nes", .{});
+
      // var f = try std.fs.openFileAbsolute("/foo/snes/Duck Hunt (World).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Top Gun (USA) (Rev A).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Castlevania.USA.nes", .{});
@@ -28,7 +36,6 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
      // var f = try std.fs.openFileAbsolute("/foo/snes/7-dmc_basics.nes", .{});
       // var f = try std.fs.openFileAbsolute("/foo/snes/Metroid (USA).nes", .{});
      // var f = try std.fs.openFileAbsolute("/foo/snes/zelda.nes", .{});
-      // var f = try std.fs.openFileAbsolute("/foo/snes/Teenage Mutant Ninja Turtles (USA).nes", .{});
      // var f = try std.fs.openFileAbsolute("/foo/snes/Contra (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Chip 'n Dale - Rescue Rangers (USA).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/DuckTales (USA).nes", .{});
@@ -45,7 +52,7 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
     // var f = try std.fs.openFileAbsolute("/foo/snes/controller.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Total.Recall.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/testroms/palette_fill.nes", .{});
-     var f = try std.fs.openFileAbsolute("/foo/snes/Battletoads (USA).nes", .{});
+     // var f = try std.fs.openFileAbsolute("/foo/snes/Battletoads (USA).nes", .{});
     // mmc3:
       // var f = try std.fs.openFileAbsolute("/foo/snes/Power Blade 2 (USA).nes", .{});
       // var f = try std.fs.openFileAbsolute("/foo/snes/Jurassic Park (USA).nes", .{});

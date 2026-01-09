@@ -104,7 +104,6 @@ v: V = .{}, // current VRam index
 // ||| ++-------------- nametable select
 // +++----------------- fine Y scroll
 t: V = .{}, // temporary VRam index, can also be thought of as the address of the top left onscreen tile.
-t1: u15 = 0, // temporary VRam index, can also be thought of as the address of the top left onscreen tile.
 fineXScroll: u3 = 0, //(x) fine x scroll
 writeToggle: u1 = 0, // first or second write toggle
 sprites: [64]Sprite = .{Sprite{}} ** 64,
@@ -163,7 +162,7 @@ pub fn incrementY(self: *Ppu) void {
             self.v.fineYScroll = 0;
             if (self.v.coarseYScroll == 29) {
                 self.v.coarseYScroll = 0; 
-                self.v.verticalNametable ^= 1; //switch vertical nametable
+                self.v.verticalNametable ^= 1;
             } else if (self.v.coarseYScroll == 31) {
                 self.v.coarseYScroll = 0;
             } else {
@@ -174,8 +173,6 @@ pub fn incrementY(self: *Ppu) void {
 }
 pub fn copyXPosition(self: *Ppu) void {
     if (self.renderingEnabled()) {
-             // self.t.horizontalNametable = @truncate(self.ppuCtrl.baseNametableAddress);
-             // self.t.verticalNametable = @truncate(self.ppuCtrl.baseNametableAddress >> 1);
         self.v.coarseXScroll = self.t.coarseXScroll;
         self.v.horizontalNametable = self.t.horizontalNametable;
     }
@@ -184,6 +181,7 @@ pub fn copyYPosition(self: *Ppu) void {
     if (self.renderingEnabled()) {
         self.v.coarseYScroll = self.t.coarseYScroll;
         self.v.verticalNametable = self.t.verticalNametable;
+        // self.v.verticalNametable = 1; // correct
         self.v.fineYScroll = self.t.fineYScroll;
     }
 }
@@ -352,8 +350,20 @@ pub fn drawVisibleScanline(self: *Ppu) void {
     if (self.dot == 256 ) {
         self.incrementY();
     }
+    // if (self.dot == 0 and self.scanline >= 194 and self.scanline < 240) {
+    //     // std.debug.print("hscroll: {d}, vscroll: {d}, harr: {d}, varr:{d}\n", .{self.v.coarseXScroll, self.v.coarseYScroll, self.v.horizontalNametable, self.v.verticalNametable});
+    //     self.v.verticalNametable = 1; // turtles..
+    // }
     if (self.dot == 0 and  self.scanline < 240) {
         self.fetchSprites();
+        
+        // if (self.scanline >= 195) {
+        //      self.v.horizontalNametable = 0;
+        //      self.v.verticalNametable = 1;
+        //      self.v.coarseXScroll = 0;
+        //      self.v.coarseYScroll = 14;
+        // //     std.debug.print(">> t: 0x{x}; v: 0x{x};\n", .{@as(u15, @bitCast(self.t)), @as(u15,@bitCast(self.v))});
+        // }
     }
     if (self.dot == 257 ) {
         self.copyXPosition();
@@ -494,11 +504,11 @@ pub fn read(self: *Ppu, addr: u16) u8 {
             // const incr = self.ppuCtrl.vramAddressIncrement;
             // t +%= (~incr + (incr * @as(u15, 32)));
             const res = self.ppuReadBuff;
-            self.ppuReadBuff = self.ppu_read(self.t1); 
+            var v1:u15 = @bitCast(self.v);
+            self.ppuReadBuff = self.ppu_read(v1); 
             const incr = self.ppuCtrl.vramAddressIncrement;
-            self.t1 +%= (~incr + (incr * @as(u15, 32)));
-            self.t = @bitCast(self.t1);
-            self.v = self.t;
+            v1 +%= (~incr + (incr * @as(u15, 32)));
+            self.v = @bitCast(v1);
             return res;
         }, // R/W Vram data
         else => std.debug.panic("wrong address 0x{x} for PPU", .{addr}),
@@ -517,7 +527,7 @@ pub fn write(self: *Ppu, addr: u16, data: u8) void {
              self.t.horizontalNametable = @truncate(self.ppuCtrl.baseNametableAddress);
              self.t.verticalNametable = @truncate(self.ppuCtrl.baseNametableAddress >> 1);
                  // }
-            // std.debug.print("x nametable update: {d}; sl: {d}, dot: {d}\n", .{self.t.horizontalNametable, self.scanline, self.dot});
+            // std.debug.print("x nametable update: {d}; sl: {d}, dot: {d}\n", .{self.t.verticalNametable, self.scanline, self.dot});
             // std.debug.print("PPU: write to CTRL, {any}\n", .{self.ppuCtrl});
         }, // TODO: writes to this register are ignored until the first pre-render scanline.
         0x2001 => self.ppuMask = @bitCast(data), // w
@@ -535,8 +545,10 @@ pub fn write(self: *Ppu, addr: u16, data: u8) void {
                 // std.debug.print("x scroll update: {d}; sl: {d}, dot: {d}\n", .{self.t.coarseXScroll, self.scanline, self.dot});
             } else {
                 self.t.coarseYScroll = @truncate(data >> 3);
+                // std.debug.print("coarse Y scroll: {d}; scnaline {d}\n", .{self.t.coarseYScroll, self.scanline});
                 self.t.fineYScroll = @truncate(data); 
             }
+             // std.debug.print("t update: {d}; sl: {d}, dot: {d}\n", .{self.t.verticalNametable, self.scanline, self.dot});
             // self.ppuScroll[self.writeToggle] = data;
             self.writeToggle +%= 1;
         }, // Wx2
@@ -560,25 +572,33 @@ pub fn write(self: *Ppu, addr: u16, data: u8) void {
                 // var t: u15 = @bitCast(self.t);
                 // t = (t & 0x00FF) | (@as(u15, data) << 8) & 0x3fff;
                 // self.t = @bitCast(t);
-                // self.t1 = @bitCast(self.t);
-                self.t1 = (self.t1 & 0x00FF) | (@as(u15, data) << 8) & 0x3fff;
-                self.t = @bitCast(self.t1);
-                self.v = self.t;
+                var v1:u15 = @bitCast(self.v);
+                v1 = (v1 & 0x00FF) | (@as(u15, data) << 8) & 0x3fff;
+                self.v = @bitCast(v1);
                 // self.t = @bitCast(self.t1);
             } else {
                 // var t: u15 = @bitCast(self.t);
                 // t = t & (0x7F00) | @as(u15, data);
                 // self.t = @bitCast(t);
-                // self.t1 = @bitCast(self.t);
-                self.t1 = self.t1 & (0x7F00) | @as(u15, data);
-                self.t = @bitCast(self.t1);
-                self.v = self.t;
+                var v1:u15 = @bitCast(self.v);
+                v1 = v1 & (0x7F00) | @as(u15, data);
+                self.v = @bitCast(v1);
             // const foo: u15 = @bitCast(self.t);
             // if (foo != self.t1) {
             //     std.debug.print("!!\nt:  0x{x}\nt1: 0x{x}\n", .{foo, self.t1});
             // }
                  // self.t = @bitCast(self.t1);
             }
+            // if (self.scanline == 193 and self.writeToggle == 1) {
+            //     // self.v = @bitCast(@as(u15, 0x290C));
+            //      self.v.verticalNametable =1;
+            //         // std.debug.print("data: 0x{d}\n", .{data});
+            //  std.debug.print("v (0x{x}) nt: {d}; vs: {d}; sl: {d}, dot: {d}\n", .{@as(u15, @bitCast(self.v)), self.v.verticalNametable, self.v.coarseYScroll, self.scanline, self.dot});
+            //     // self.v.coarseYScroll = 29;
+            //     // self.t1 = 0x29;
+            //     // self.v = @bitCast(self.t1);
+            //     // self.t = self.v;
+            //     }
             self.writeToggle +%= 1;
         }, // Wx2
         0x2007 => { //PPUDATA - VRAM data
@@ -589,11 +609,11 @@ pub fn write(self: *Ppu, addr: u16, data: u8) void {
             // self.ppu_write(@truncate(t), data);
             // const incr = self.ppuCtrl.vramAddressIncrement;
             // t +%= (~incr + (incr * @as(u15, 32)));
-            self.ppu_write(@truncate(self.t1), data);
+            var v1:u15 = @bitCast(self.v);
+            self.ppu_write(@truncate(v1), data);
             const incr = self.ppuCtrl.vramAddressIncrement;
-            self.t1 +%= (~incr + (incr * @as(u15, 32)));
-            self.t = @bitCast(self.t1);
-            self.v = self.t;
+            v1 +%= (~incr + (incr * @as(u15, 32)));
+            self.v = @bitCast(v1); // FIXME: should be updated on the next cycle..
         },
         else => std.debug.panic("wrong address 0x{x} for PPU", .{addr}),
     }
@@ -1178,7 +1198,7 @@ pub fn serialize(self: *Ppu, writer: *std.Io.Writer) !void {
     try writer.writeByte(self.oamAddr);
     try writer.writeInt(u16, @as(u15, @bitCast(self.v)), .little);
     try writer.writeInt(u16, @as(u15, @bitCast(self.t)), .little);
-    try writer.writeInt(u16, self.t1, .little);
+    try writer.writeInt(u16, 0, .little);
     try writer.writeInt(u8, self.fineXScroll, .little);
     try writer.writeInt(u8, self.writeToggle, .little);
     for (self.sprites) |s| {
@@ -1195,7 +1215,7 @@ pub fn deserialize(self: *Ppu, reader: *std.Io.Reader) !void  {
     self.oamAddr = try reader.takeByte();
     self.v = @bitCast(@as(u15, @truncate(try reader.takeInt(u16, .little))));
     self.t = @bitCast(@as(u15, @truncate(try reader.takeInt(u16, .little))));
-    self.t1 = @bitCast(@as(u15, @truncate(try reader.takeInt(u16, .little))));
+    _ = try reader.takeInt(u16, .little);
     self.fineXScroll = @truncate(try reader.takeByte());
     self.writeToggle = @truncate(try reader.takeByte());
 

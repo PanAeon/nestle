@@ -6,6 +6,7 @@ pub const UxRom = @import("UxRom.zig");
 pub const MMC1 = @import("MMC1.zig");
 pub const MMC3 = @import("MMC3.zig");
 pub const AxRom = @import("AxROM.zig");
+pub const Camerica = @import("Camerica.zig");
 
 pub const NametableArragnment = enum { Horizontal, Vertical, SingleScreen, FourScreens, Other };
 const Mapper = @This();

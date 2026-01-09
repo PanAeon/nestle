@@ -73,19 +73,30 @@ pub fn read(ptr: *anyopaque, addr: u16) u8 {
         0x6000...0x7FFF => return m.prgRAM[addr - 0x6000],
         0x8000...0x9FFF => {
             if (m.bankSelect.PrgROMBankMode == 0) {
-              return m.prgROM[@as(u32, m.bankValues[6]) * 8 * 1024 + @as(u32, addr) - 0x8000];
+              const foo:u5 = @truncate(m.bankValues[6]);
+              var bar = @as(u32, foo) * 8 * 1024 + @as(u32, addr) - 0x8000;
+              if (bar >= m.prgROM.len) {
+                    bar -= @intCast(m.prgROM.len);
+              }
+              return m.prgROM[bar];
             } else {
                 return m.prgROM[m.prgROM.len - (2*8*1024) + addr - 0x8000];
             }
         },
         0xA000...0xBFFF => {
-            return m.prgROM[@as(u32, m.bankValues[7]) * 8 * 1024 + @as(u32, addr) - 0xA000];
+            const foo:u5 = @truncate(m.bankValues[7]);
+            var bar = @as(u32, foo) * 8 * 1024 + @as(u32, addr) - 0xA000;
+            if (bar >= m.prgROM.len) {
+                bar -= @intCast(m.prgROM.len);
+            }
+            return m.prgROM[bar];
         },
         0xC000...0xDFFF => {
             if (m.bankSelect.PrgROMBankMode == 0) {
                 return m.prgROM[m.prgROM.len - (2*8*1024) + @as(u32, addr) - 0xC000];
             } else {
-              return m.prgROM[@as(u32, m.bankValues[6]) * 8 * 1024 + @as(u32, addr) - 0xC000];
+              const foo:u5 = @truncate(m.bankValues[6]);
+              return m.prgROM[@as(u32, foo) * 8 * 1024 + @as(u32, addr) - 0xC000];
             }
         },
         0xE000...0xFFFF => { // 8 KB PRG ROM bank, fixed to the last bank
@@ -202,7 +213,8 @@ pub fn ppu_read(ptr: *anyopaque, addr: u14) u8 {
             else => @panic("boo"),
         },
         .FourScreens => switch (addr) {
-            0x2000...0x2FFF => return m.chrROM[m.chr_address(addr)],
+            0x0000...0x1FFF => return m.chrROM[m.chr_address(addr)],
+            0x2000...0x2FFF => return m.vram[addr],
             else => @panic("boo"),
         },
         else => std.debug.panic("unsupported mirroring by MMC3 {any}", .{m.nametableArrangement}),
