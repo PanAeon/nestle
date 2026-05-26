@@ -33,16 +33,18 @@
     // internet connectivity.
     .dependencies = .{
         .zgui = .{
-            .url = "git+https://github.com/zig-gamedev/zgui#22deaab3363ac0fd8f34b91a1cd66883199960f9",
-            .hash = "zgui-0.6.0-dev--L6sZATybQCK2aBUnZ_5VKga-60UiZZ0v4e0T9doN4iu",
+            .path = "../zgui",
+            // .url = "git+https://github.com/zig-gamedev/zgui#22deaab3363ac0fd8f34b91a1cd66883199960f9",
+            // .hash = "zgui-0.6.0-dev--L6sZATybQCK2aBUnZ_5VKga-60UiZZ0v4e0T9doN4iu",
         },
         .zopengl = .{
             .path = "../zopengl",
             // .hash = "zopengl-0.6.0-dev-5-tnzyyoCgC3pTkB1hXXYSLnkXppSZAsJJJDP-FlogKa",
         },
         .zglfw = .{
-            .url = "git+https://github.com/zig-gamedev/zglfw#6034a5623312c58bf5e64c1a2b686691c28575f4",
-            .hash = "zglfw-0.10.0-dev-zgVDNPKyIQCBi-wv_vxkvIQq1u0bP4D56Wszx_2mszc7",
+            .path = "../zglfw",
+            // .url = "git+https://github.com/zig-gamedev/zglfw#6034a5623312c58bf5e64c1a2b686691c28575f4",
+            // .hash = "zglfw-0.10.0-dev-zgVDNPKyIQCBi-wv_vxkvIQq1u0bP4D56Wszx_2mszc7",
         },
         .zmath = .{
             .url = "git+https://github.com/zig-gamedev/zmath.git#3a5955b2b72cd081563fbb084eff05bffd1e3fbb",

@@ -340,6 +340,7 @@ pub fn serialize(ptr: *anyopaque, writer: *std.Io.Writer) !void {
     try writer.writeByte(m.chrBank0Register);
     try writer.writeByte(m.chrBank1Register);
     try writer.writeByte(@as(u5, @bitCast(m.prgBankRegister)));
+    try writer.writeAll(m.prgRAM);
 }
 pub fn deserialize(ptr: *anyopaque, reader: *std.Io.Reader) !void {
     const m: *MMC1 = @ptrCast(@alignCast(ptr));
@@ -353,10 +354,12 @@ pub fn deserialize(ptr: *anyopaque, reader: *std.Io.Reader) !void {
     m.chrBank0Register = @truncate(try reader.takeByte());
     m.chrBank1Register = @truncate(try reader.takeByte());
     m.prgBankRegister = @bitCast(@as(u5, @truncate(try reader.takeByte())));
+    var writer1 = std.Io.Writer.fixed(m.prgRAM);
+    try reader.streamExact(&writer1, m.prgRAM.len);
 }
 pub fn byteSize(ptr: *anyopaque) u64 {
     const m: *MMC1 = @ptrCast(@alignCast(ptr));
-    return m.chrRAM.len + 8 + 6;
+    return m.chrRAM.len + 8 + 6 + m.prgRAM.len;
 }
 pub fn onScanline(_: *anyopaque) bool {
     return false;

@@ -1,5 +1,5 @@
 const std = @import("std");
-const File = std.fs.File;
+const File = std.Io.File;
 const Mapper = @import("../mapper/Mapper.zig");
 // REF: https://www.nesdev.org/wiki/INES
 pub const FileReadError = error{FileTooShort};
@@ -26,17 +26,21 @@ pub const Header = packed struct {
     flags10: u8,
 };
 
+var threaded: std.Io.Threaded = .init_single_threaded;
+
 pub fn hasMagicByte(f: *File) !bool {
     const magic: [4]u8 = .{ 0x4E, 0x45, 0x53, 0x1A };
+    var rbuff: [1024]u8 = std.mem.zeroes([1024]u8);
     var buff: [4]u8 = std.mem.zeroes([4]u8);
-    try f.seekTo(0);
-    const read = try f.read(&buff);
+    var reader = f.reader(threaded.io(), &rbuff);
+    try reader.seekTo(0);
+    const read = try reader.interface.readSliceShort(&buff);
     return (read == 4) and std.mem.eql(u8, &buff, &magic);
 }
-pub fn readHeader(f: *File) !Header {
+pub fn readHeader(reader: *std.Io.File.Reader) !Header {
     var buff: [16]u8 = std.mem.zeroes([16]u8);
-    try f.seekTo(0);
-    const nRead = try f.read(&buff);
+    try reader.seekTo(0);
+    const nRead = try reader.interface.readSliceShort(&buff);
     if (nRead != 16) {
         return error.FileTooShort;
     }
@@ -50,18 +54,20 @@ pub const RomInfo = struct {
 };
 // std.ascii.hexEscape(bytes: []const u8, case: Case)
 // memory owned by caller
-pub fn readRom(gpa: std.mem.Allocator, f: *File, vram: []u8) !RomInfo {
-    const header = try readHeader(f);
+pub fn readRom(gpa: std.mem.Allocator, file: *std.Io.File, vram: []u8) !RomInfo {
+    var rbuff: [1024]u8 = std.mem.zeroes([1024]u8);
+    var reader = file.reader(threaded.io(), &rbuff);
+    const header = try readHeader(&reader);
     if (header.flags6.trainer == 1) {
         // for now skip 512 bytes
-        try f.seekBy(512);
+        try reader.seekBy(512);
     }
     const prgROM: []u8 = try gpa.alloc(u8, @as(usize, header.prgRomSize) * 16 * 1024);
-    var nRead = try f.read(prgROM);
+    var nRead = try reader.interface.readSliceShort(prgROM);
     if (nRead != @as(usize, header.prgRomSize) * 16 * 1024) {
         return error.FileTooShort;
     }
-    std.debug.print("header: {any}\n", .{header});
+    // std.debug.print("header: {any}\n", .{header});
     // const numBanks = header.prgRomSize;
     // const firstBankData = prgROM[0..0x4000];
     // _ = &firstBankData;
@@ -70,13 +76,14 @@ pub fn readRom(gpa: std.mem.Allocator, f: *File, vram: []u8) !RomInfo {
     if (header.chrRomSize > 0) {
         chrROM = try gpa.alloc(u8, @as(usize, header.chrRomSize) * 8 * 1024);
         _ = &nRead;
-        nRead = try f.read(chrROM);
+        nRead = try reader.interface.readSliceShort(chrROM);
         if (nRead != @as(usize, header.chrRomSize) * 8 * 1024) {
             return error.FileTooShort;
         }
     }
     const mapper: u8 = header.flags6.lowerNybbleOfMapper +
         (@as(u8, header.flags7.upperNybleOfMapper) << 4);
+    std.debug.print("mapper: {d}\n", .{mapper});
     // mapped into $8000-$BFFF
     //
     // const lastBankData = prgROM[7 * 0x4000 .. 8 * 0x4000]; //16kb we need;

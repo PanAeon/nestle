@@ -16,57 +16,50 @@ const gl = zopengl.bindings;
 pub var window: *glfw.Window = undefined;
 
 const gl_version_major: u16 = 4;
-const gl_version_minor: u16 = 5;
-const content_dir = @import("build_options").content_dir;
+const gl_version_minor: u16 = 6;
+// const content_dir = @import("build_options").content_dir;
 
 const NES_WIDTH: usize = 256;
 const NES_HEIGHT: usize = 240; //224...
+const NES_WIDTH_F: f32 = 256.0;
+const NES_HEIGHT_F: f32 = 240.0; //224...
 
-const vertexShaderSource =
-    \\#version 300 es
-    \\
-    \\// an attribute is an input (in) to a vertex shader.
-    \\// It will receive data from a buffer
-    \\in vec2 a_position;
-    \\in vec2 a_texcoord;
-    \\
-    \\// A matrix to transform the positions by
-    \\uniform mat4 u_matrix;
-    \\
-    \\out vec2 v_texcoord;
-    \\
-    \\// all shaders have a main function
-    \\void main() {
-    \\  // Multiply the position by the matrix.
-    \\  gl_Position = vec4((u_matrix * vec4(a_position, 0, 1)).xy, 0, 1);
-    \\  v_texcoord = a_texcoord;
-    \\  //gl_Position = vec4(a_position, 0, 1); 
-    \\  //gl_Position = vec4(0.0, 0.0, 0.0, 1);
-    \\}  
-;
+// FIXME: zelda sprite rotated wrong
+// TODO: Options
+const VideoOptions = struct {
+    integerScaling: bool = false,
+    linearFilter: bool = true,
+};
 
-const fragmentShaderSource =
-    \\#version 300 es
-    \\
-    \\precision highp float;
-    \\
-    \\in vec2 v_texcoord;
-    \\uniform sampler2D u_texture;
-    \\
-    \\out vec4 outColor;
-    \\
-    \\void main() {
-    \\  outColor = texture(u_texture, v_texcoord);
-    \\}
-;
+var videoOptions: VideoOptions = .{};
 
-pub fn main() !void {
+// const ShaderSrc = @embedFile("shaders/stock.glsl");
+const ShaderSrc = @embedFile("shaders/crt-easymode.glsl");
+// const ShaderSrc = @embedFile("shaders/crt-geom.glsl");
+// const ShaderSrc = @embedFile("shaders/CRTShader.glsl");
+const VertexShader = "#version 450\n#define VERTEX\n" ++ ShaderSrc;
+const FragmentShader = "#version 450\n#define FRAGMENT\n" ++ ShaderSrc;
+
+pub fn main(innit: std.process.Init) !void {
     { // Change current working directory to where the executable is located.
         var buffer: [1024]u8 = undefined;
-        const path = std.fs.selfExeDirPath(buffer[0..]) catch ".";
-        try std.posix.chdir(path);
+        // const path =  std.Io.Dir.cwd();
+        const len = std.process.executablePath(innit.io, &buffer) catch {
+            @panic("foo");
+        };
+        buffer[len] = 0;
+        // std.Io.Dir.
+        // const path = std.fs.selfExeDirPath(buffer[0..]) catch ".";
+        _ = std.os.linux.chdir(buffer[0..len :0]);
     }
 
+    const homeDir = innit.environ_map.get("HOME").?; 
+    if (innit.minimal.args.vector.len != 2) {
+        @panic("expecting exactly one argument");
+    }
+    const args= try innit.minimal.args.toSlice(innit.arena.allocator());
+    const romPath = args[1];
+    // const home_dir = try std.process.getEnvVarOwned(allocator, "HOME");
 
     try glfw.init();
     defer glfw.terminate();
@@ -82,7 +75,7 @@ pub fn main() !void {
     glfw.windowHint(.scale_to_monitor, false);
     glfw.windowHint(.scale_framebuffer, false);
 
-    try init();
+    try init(homeDir, romPath);
     defer deinit();
 }
 
@@ -107,8 +100,8 @@ pub fn compileShader(shader_type: u32, source: []const u8) c_uint {
     return shader;
 }
 
-pub fn init() !void {
-    window = try glfw.Window.create(NES_WIDTH * 2, NES_HEIGHT * 2, "nestle", null);
+pub fn init(homeDir: []const u8, romPath: []const u8) !void {
+    window = try glfw.Window.create(NES_WIDTH * 2, NES_HEIGHT * 2, "nestle", null,  null);
 
     glfw.makeContextCurrent(window);
     // const monitor = glfw.getWindowMonitor(window);
@@ -117,7 +110,7 @@ pub fn init() !void {
     glfw.swapInterval(0); // disable refresh rate sync
     try zopengl.loadCoreProfile(glfw.getProcAddress, 4, gl_version_minor);
 
-    var gpa_state = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa_state = std.heap.DebugAllocator(.{}){};
     defer _ = gpa_state.deinit();
     const gpa = gpa_state.allocator();
 
@@ -141,7 +134,7 @@ pub fn init() !void {
     var imageData: [NES_WIDTH * NES_HEIGHT]u32 = .{0x00000000} ** (NES_WIDTH * NES_HEIGHT);
 
     var emulator: Emulator = undefined;
-    try Emulator.init(gpa, &imageData, &emulator);
+    try Emulator.init(gpa, &imageData, &emulator, romPath);
     defer emulator.deinit(gpa);
 
     // try emulator.saveStateToFile(gpa, 1);
@@ -173,8 +166,9 @@ pub fn init() !void {
 
     const program = gl.createProgram();
 
-    const vertexShader = compileShader(gl.VERTEX_SHADER, vertexShaderSource[0..]);
-    const fragmentShader = compileShader(gl.FRAGMENT_SHADER, fragmentShaderSource[0..]);
+    const vertexShader = compileShader(gl.VERTEX_SHADER, VertexShader[0..]);
+    const fragmentShader = compileShader(gl.FRAGMENT_SHADER, FragmentShader[0..]);
+    // const fragmentShader = compileShader(gl.FRAGMENT_SHADER, fragmentShaderSource[0..]);
 
     gl.attachShader(program, vertexShader);
     gl.attachShader(program, fragmentShader);
@@ -195,11 +189,72 @@ pub fn init() !void {
 
     gl.useProgram(program);
     // gl.viewport(0, 0, NES_WIDTH*2, NES_HEIGHT*2);
+    // shader uniforms:
+    //
+// uniform COMPAT_PRECISION vec2 OutputSize;
+// uniform COMPAT_PRECISION vec2 TextureSize;
+// uniform COMPAT_PRECISION vec2 InputSize;
+    const outputSize = gl.getUniformLocation(program, "OutputSize");
+    const textureSize = gl.getUniformLocation(program, "TextureSize");
+    const inputSize = gl.getUniformLocation(program, "InputSize");
+    const frameCount = gl.getUniformLocation(program, "FrameCount");
 
-    const positionAttrLocation = gl.getAttribLocation(program, "a_position");
-    const texCoordAttrLocation = gl.getAttribLocation(program, "a_texcoord");
-    const projection_matrix = gl.getUniformLocation(program, "u_matrix");
-    const colorLocation = gl.getUniformLocation(program, "u_color");
+    gl.uniform2f(outputSize, 2.0*NES_WIDTH_F, 2.0*NES_HEIGHT_F);
+    gl.uniform2f(textureSize, NES_WIDTH_F, NES_HEIGHT_F);
+    gl.uniform2f(inputSize, NES_WIDTH_F, NES_HEIGHT_F);
+    //
+    //
+    // const tDiffuse = gl.getUniformLocation(program, "tDiffuse");
+    // const scanlineIntensity= gl.getUniformLocation(program, "scanlineIntensity");
+    // const scanlineCount= gl.getUniformLocation(program, "scanlineCount");
+    // const time= gl.getUniformLocation(program, "time");
+    // const yOffset= gl.getUniformLocation(program, "yOffset");
+    // const brightness= gl.getUniformLocation(program, "brightness");
+    // const contrast= gl.getUniformLocation(program, "contrast");
+    // const saturation= gl.getUniformLocation(program, "saturation");
+    // const bloomIntensity= gl.getUniformLocation(program, "bloomIntensity");
+    // const bloomThreshold= gl.getUniformLocation(program, "bloomThreshold");
+    // const rgbShift= gl.getUniformLocation(program, "rgbShift");
+    // const adaptiveIntensity= gl.getUniformLocation(program, "adaptiveIntensity");
+    // const vignetteStrength= gl.getUniformLocation(program, "vignetteStrength");
+    // const curvature = gl.getUniformLocation(program, "curvature");
+    // const flickerStrength = gl.getUniformLocation(program, "flickerStrength");
+    // gl.uniform1f(tDiffuse, 
+    // gl.uniform1f(scanlineIntensity, 0.15);
+    // gl.uniform1f(scanlineCount, 256);
+    // gl.uniform1f(time, 0);
+    // gl.uniform1f(yOffset, 0);
+    // gl.uniform1f(brightness, 1.1);
+    // gl.uniform1f(contrast, 1.05);
+    // gl.uniform1f(saturation, 1.1);
+    // gl.uniform1f(bloomIntensity, 0.2);
+    // gl.uniform1f(bloomThreshold, 0.5);
+    // gl.uniform1f(rgbShift, 0.0);
+    // gl.uniform1f(adaptiveIntensity, 0.5);
+    // gl.uniform1f(vignetteStrength, 0.3);
+    // gl.uniform1f(curvature, 0.15);
+    // gl.uniform1f(flickerStrength, 0.01);
+    // const tDiffuse: { value: null },
+    // scanlineIntensity: { value: 0.15 },
+    // scanlineCount: { value: 400.0 },
+    // time: { value: 0.0 },
+    // yOffset: { value: 0.0 },
+    // brightness: { value: 1.1 },
+    // contrast: { value: 1.05 },
+    // saturation: { value: 1.1 },
+    // bloomIntensity: { value: 0.2 },
+    // bloomThreshold: { value: 0.5 },
+    // rgbShift: { value: 0.0 },
+    // adaptiveIntensity: { value: 0.5 },
+    // vignetteStrength: { value: 0.3 },
+    // curvature: { value: 0.15 },
+    // flickerStrength: { value: 0.01 }
+    //
+
+    const positionAttrLocation = gl.getAttribLocation(program, "VertexCoord");
+    const texCoordAttrLocation = gl.getAttribLocation(program, "TexCoord");
+    const projection_matrix = gl.getUniformLocation(program, "MVPMatrix");
+    const colorLocation = gl.getUniformLocation(program, "COLOR");
 
     var buffers: [3]u32 = .{ 0, 0, 0 };
     gl.createBuffers(3, buffers[0..]);
@@ -237,7 +292,7 @@ pub fn init() !void {
     // const numStripes = comptime 20;
 
     var prevFBSize = window.getFramebufferSize();
-    gen_triangles(vaos[0], positionAttrLocation, buffers[0], prevFBSize);
+    gen_triangles(vaos[0], positionAttrLocation, outputSize, buffers[0], prevFBSize);
     gen_tex_coords(vaos[0], texCoordAttrLocation, buffers[1]);
 
     // Create a texture.
@@ -272,9 +327,13 @@ pub fn init() !void {
         // }
         gl.bindTexture(gl.TEXTURE_2D, textures[0]);
         gl.textureParameteri(textures[0], gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.textureParameteri(textures[0], gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        if (videoOptions.linearFilter) {
+            gl.textureParameteri(textures[0], gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        } else {
+            gl.textureParameteri(textures[0], gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        }
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, NES_WIDTH, NES_HEIGHT, 0, gl.RGBA, gl.UNSIGNED_BYTE, &imageData);
-        gl.generateMipmap(gl.TEXTURE_2D);
+        // gl.generateMipmap(gl.TEXTURE_2D);
     }
 
     // Asynchronously load an image
@@ -308,6 +367,7 @@ pub fn init() !void {
     var rewStarted: bool = false;
     var rewCursor: usize = 0;
     var isEven : bool = false;
+    var frameNumber: u16 = 0;
     // var writer = try std.Io.Writer.Allocating.initCapacity(gpa, 16000);
     // defer writer.deinit();
     var textBuffer: [1024]u8 = std.mem.zeroes([1024]u8);
@@ -326,11 +386,14 @@ pub fn init() !void {
             };
         }
         lastFrameTime = glfw.getTime();
+
+        gl.uniform1i(frameCount, frameNumber);
+        frameNumber +%= 1;
         // updateAndRender();
         glfw.pollEvents();
         const fb_size = window.getFramebufferSize();
         if (fb_size[0] != prevFBSize[0] or fb_size[1] != prevFBSize[1]) {
-            gen_triangles(vaos[0], positionAttrLocation, buffers[0], fb_size);
+            gen_triangles(vaos[0], positionAttrLocation, outputSize, buffers[0], fb_size);
             prevFBSize[0] = fb_size[0];
             prevFBSize[1] = fb_size[1];
         }
@@ -373,17 +436,18 @@ pub fn init() !void {
             const jstate: JoystickState = .{ .buttonA = buttons[0] == .press, .buttonB = buttons[1] == .press, .select = buttons[6] == .press, .start = buttons[7] == .press, .left = buttons[14] == .press, .right = buttons[12] == .press, .up = buttons[11] == .press, .down = buttons[13] == .press };
             emulator.setJoystickState(jstate);
             const axes = try glfw.getJoystickAxes(joystick);
-            rew = rew | (axes[2] > -0.9);
+            slowdown =  (axes[5] > 0.18);
+            rew = rew | (axes[2] > 0.18);
             // std.debug.print("buttons: {any}\n", .{buttons});
-            // std.debug.print("axes: {d}\n", .{axes[2]});
+            // std.debug.print("axes: {d}\n", .{axes[5]});
             if (buttons[4] == .press and !load_debounce) {
-                try emulator.loadStateFromFile(gpa, currentSlot);
+                try emulator.loadStateFromFile(gpa, currentSlot, homeDir);
                 text = try std.fmt.bufPrint(&textBuffer, "state {d} loaded", .{currentSlot});
                 textTimeout = 60*3;
             }
             load_debounce = buttons[4] == .press;
             if (buttons[5] == .press and !save_debounce) {
-                try emulator.saveStateToFile(gpa, currentSlot);
+                try emulator.saveStateToFile(gpa, currentSlot, homeDir);
                 text = try std.fmt.bufPrint(&textBuffer, "state {d} saved", .{currentSlot});
                 textTimeout = 60*3;
             }
@@ -459,7 +523,7 @@ pub fn init() !void {
         gl.uniformMatrix4fv(projection_matrix, 1, 0, zm.arrNPtr(&ortho));
         gl.bindTexture(gl.TEXTURE_2D, textures[0]);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, NES_WIDTH, NES_HEIGHT, 0, gl.RGBA, gl.UNSIGNED_BYTE, &imageData);
-        gl.generateMipmap(gl.TEXTURE_2D);
+        // gl.generateMipmap(gl.TEXTURE_2D);
 
         // const err = gl.getError();
         //        std.debug.print("err: {d}\n", .{err});
@@ -518,39 +582,58 @@ pub fn init() !void {
     }
 }
 
-pub fn gen_triangles(vao: u32, positionAttrLocation: i32, positionBuffer: u32, fb_size: [2]c_int) void {
+pub fn gen_triangles(vao: u32, positionAttrLocation: i32, outputSizeAttrLoc: i32, positionBuffer: u32, fb_size: [2]c_int) void {
     gl.bindVertexArray(vao);
     gl.enableVertexAttribArray(@bitCast(positionAttrLocation));
 
     // TODO: someday do it with glortho..
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-    const scaling:f32 = @floatFromInt(@max(1, @as(usize, @intCast(fb_size[1])) / NES_HEIGHT));
+    // integer...
+    // const scaling:f32 = @floatFromInt(@max(1, @as(usize, @intCast(fb_size[1])) / NES_HEIGHT));
+    const scaling: f32 = if (videoOptions.integerScaling)
+                             @floatFromInt(@max(1, @as(usize, @intCast(fb_size[1])) / NES_HEIGHT))
+                         else 
+                             @as(f32, @floatFromInt(fb_size[1])) / NES_HEIGHT;
     const left: f32 = (@as(f32, @floatFromInt(fb_size[0])) - scaling*NES_WIDTH) / 2.0;
     const top: f32 = (@as(f32, @floatFromInt(fb_size[1])) - scaling*NES_HEIGHT) / 2.0;
+    gl.uniform2f(outputSizeAttrLoc, (scaling*NES_WIDTH), (scaling*NES_HEIGHT));
 
     // 6 vertices for each brick,
     // let's do the paddle first
-    var data: [12]f32 = .{0} ** 12;
+    var data: [24]f32 = .{0} ** 24;
     data[0] = left;
     data[1] = top;
-    data[2] = left + NES_WIDTH * scaling;
-    data[3] = top;
-    data[4] = left + NES_WIDTH * scaling;
-    data[5] = top + NES_HEIGHT * scaling;
+    data[2] = 0;
+    data[3] = 1;
 
-    data[6] = left + NES_WIDTH * scaling;
-    data[7] = top + NES_HEIGHT * scaling;
-    data[8] = left;
+    data[4] = left + NES_WIDTH * scaling;
+    data[5] = top;
+    data[6] = 0;
+    data[7] = 1;
+    data[8] = left + NES_WIDTH * scaling;
     data[9] = top + NES_HEIGHT * scaling;
-    data[10] = left;
-    data[11] = top;
+    data[10] = 0;
+    data[11] = 1;
+
+    data[12] = left + NES_WIDTH * scaling;
+    data[13] = top + NES_HEIGHT * scaling;
+    data[14] = 0;
+    data[15] = 1;
+    data[16] = left;
+    data[17] = top + NES_HEIGHT * scaling;
+    data[18] = 0;
+    data[19] = 1;
+    data[20] = left;
+    data[21] = top;
+    data[22] = 0;
+    data[23] = 1;
 
     // const num_points: i32 = 6;
 
     // 4 * @as(isize , @intCast(data_idx))
     gl.bufferData(gl.ARRAY_BUFFER, 4 * data.len, &data, gl.STATIC_DRAW);
 
-    const size = 2; // 2 components per iteration
+    const size = 4; // 4 components per iteration
     const @"type" = gl.FLOAT; // the data is 32bit floats
     const normalize: u8 = 0; // don't normalize the data
     const stride: u8 = 0; // 0 = move forward size * sizeof(type) each iteration to get the next position
@@ -564,15 +647,13 @@ pub fn gen_tex_coords(vao: u32, texAttrLocation: i32, texBuffer: u32) void {
 
     gl.bindBuffer(gl.ARRAY_BUFFER, texBuffer);
 
-    // 6 vertices for each brick,
-    // let's do the paddle first
-    var data: [12]f32 = .{
-        0, 0,
-        1, 0,
-        1, 1,
-        1, 1,
-        0, 1,
-        0, 0,
+    var data: [24]f32 = .{
+        0, 0, 0, 0,
+        1, 0, 0, 0,
+        1, 1, 0, 0,
+        1, 1, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 0, 0,
     };
 
     // const num_points: i32 = 6;
@@ -580,7 +661,7 @@ pub fn gen_tex_coords(vao: u32, texAttrLocation: i32, texBuffer: u32) void {
     // 4 * @as(isize , @intCast(data_idx))
     gl.bufferData(gl.ARRAY_BUFFER, @sizeOf(f32) * data.len, &data, gl.STATIC_DRAW);
 
-    const size = 2; // 2 components per iteration
+    const size = 4; // 4 components per iteration
     const @"type" = gl.FLOAT; // the data is 32bit floats
     const normalize: u8 = 1;
     const stride: u8 = 0; // 0 = move forward size * sizeof(type) each iteration to get the next position

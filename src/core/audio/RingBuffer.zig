@@ -13,6 +13,8 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 
+var threaded: std.Io.Threaded = .init_single_threaded;
+
 pub fn RingBufferConstructor(comptime T: type) type {
     return struct {
         const RingBuffer = @This();
@@ -20,7 +22,7 @@ pub fn RingBufferConstructor(comptime T: type) type {
         data: []T,
         read_index: usize,
         write_index: usize,
-        mutex: std.Thread.Mutex,
+        mutex: std.Io.Mutex,
 
         pub const Error = error{ Full, ReadLengthInvalid };
 
@@ -31,7 +33,7 @@ pub fn RingBufferConstructor(comptime T: type) type {
             rb.data = bytes;
             rb.write_index = 0;
             rb.read_index = 0;
-            rb.mutex = .{};
+            rb.mutex = .init;
             return rb;
         }
 
@@ -55,8 +57,8 @@ pub fn RingBufferConstructor(comptime T: type) type {
         /// Write `byte` into the ring buffer. Returns `error.Full` if the ring
         /// buffer is full.
         pub fn write(self: *RingBuffer, byte: T) Error!void {
-            self.mutex.lock();
-            defer self.mutex.unlock();
+            self.mutex.lock(threaded.io()) catch { @panic("boo"); };
+            defer self.mutex.unlock(threaded.io());
             if (self.isFull()) return error.Full;
             self.writeAssumeCapacity(byte);
         }
@@ -82,8 +84,8 @@ pub fn RingBufferConstructor(comptime T: type) type {
         /// Consume a byte from the ring buffer and return it; asserts that the buffer
         /// is not empty.
         pub fn readAssumeLength(self: *RingBuffer) T {
-            self.mutex.lock();
-            defer self.mutex.unlock();
+            self.mutex.lock(threaded.io()) catch { @panic("boo"); };
+            defer self.mutex.unlock(threaded.io());
             assert(!self.isEmpty());
             const byte = self.data[self.mask(self.read_index)];
             self.read_index = self.mask2(self.read_index + 1);

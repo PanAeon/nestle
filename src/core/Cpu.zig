@@ -22,7 +22,7 @@ pub fn init(memory: *MemoryController) Cpu {
     return .{ .A = 0, .X = 0, .Y = 0, .PC = 0, .S = 0, .P = Flags.empty(), .SP = 0xFF, .pageCrossed = 0x00, .irqFlag = 0, .nmiFlag = 0, .memory = memory, .dmaDone = false };
 }
 
-const CpuState = extern struct {
+const CpuState = packed struct {
     PC: u16, A:u8, X:u8, Y:u8, S:u8, P:Flags, SP:u8 
 };
 pub fn byteSize(self: *Cpu) u64 {

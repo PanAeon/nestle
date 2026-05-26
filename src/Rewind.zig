@@ -11,7 +11,7 @@ numItems: usize = 0,
 // imagePos: usize = 0,
 itemSize: usize = 0,
 
-const RewindSeconds = 20; // 10 seconds now
+const RewindSeconds = 20;
 
 const NES_WIDTH: usize = 256;
 const NES_HEIGHT: usize = 240;

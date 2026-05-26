@@ -11,6 +11,8 @@ const ines = @import("loader/ines.zig");
 const zaudio = @import("zaudio");
 const Emulator = @This();
 
+var threaded: std.Io.Threaded = .init_single_threaded;
+
 vram: [4096]u8,
 mapper: Mapper,
 apu: Apu,
@@ -20,8 +22,8 @@ memoryController: MemoryController,
 cpu: Cpu,
 printCore: bool,
 romCrc32: u32 = 0,
-pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
-     var f = try std.fs.openFileAbsolute("/foo/snes/Blaster Master (USA).nes", .{});
+pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator, filename: []const u8) !void {
+     // var f = try std.fs.openFileAbsolute("/foo/snes/Blaster Master (USA).nes", .{});
      // var f = try std.fs.openFileAbsolute("/foo/snes/Castlevania II - Simon's Quest (USA).nes", .{});
      // var f = try std.fs.openFileAbsolute("/foo/snes/Robin Hood - Prince of Thieves (USA) (Rev 1).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/7-dmc_basics.nes", .{});
@@ -31,9 +33,11 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
 
      // var f = try std.fs.openFileAbsolute("/foo/snes/Duck Hunt (World).nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Top Gun (USA) (Rev A).nes", .{});
-    // var f = try std.fs.openFileAbsolute("/foo/snes/Castlevania.USA.nes", .{});
+    // var f = try std.Io.Dir.openFileAbsolute(threaded.io(), "/foo/snes/Castlevania.USA.nes", .{});
     // var f = try std.fs.openFileAbsolute("/foo/snes/Darkwing Duck (USA).nes", .{});
      // var f = try std.fs.openFileAbsolute("/foo/snes/7-dmc_basics.nes", .{});
+    var f = try std.Io.Dir.openFileAbsolute(threaded.io(), filename, .{});
+    // var f = try std.Io.Dir.openFileAbsolute(threaded.io(), "/foo/snes/Metroid (USA).nes", .{});
       // var f = try std.fs.openFileAbsolute("/foo/snes/Metroid (USA).nes", .{});
      // var f = try std.fs.openFileAbsolute("/foo/snes/zelda.nes", .{});
      // var f = try std.fs.openFileAbsolute("/foo/snes/Contra (USA).nes", .{});
@@ -60,7 +64,7 @@ pub fn init(gpa: std.mem.Allocator, outputBuffer: []u32, emu: *Emulator) !void {
       // var f = try std.fs.openFileAbsolute("/foo/snes/Earth Bound (USA) (Proto).nes", .{});
     //
       // var f = try std.fs.openFileAbsolute("/foo/snes/scanline/scanline.nes", .{});
-    defer f.close();
+    defer f.close(threaded.io());
     // _ = try nestle.ines.hasMagicByte(&f);
     emu.* = Emulator{
         .vram = std.mem.zeroes([4096]u8),
@@ -217,7 +221,6 @@ pub fn run_cpu_test(self: *Emulator) !void {
     var f = try std.fs.openFileAbsolute("/foo/snes/nestest.log", .{});
     defer f.close();
     var linebuffer = [_]u8{0} ** 1024;
-    var threaded: std.Io.Threaded = .init_single_threaded;
     var reader_state = f.reader(threaded.io(), &linebuffer);
     var reader = &reader_state.interface;
 
@@ -349,15 +352,15 @@ pub fn printCPUCore(self: *Emulator) void {
     self.printCore = true;
 }
 
-pub fn saveStateToFile(self: *Emulator, allocator: std.mem.Allocator, slotNumber: u8) !void {
-    const home_dir = try std.process.getEnvVarOwned(allocator, "HOME");
-    defer allocator.free(home_dir);
+pub fn saveStateToFile(self: *Emulator, allocator: std.mem.Allocator, slotNumber: u8, home_dir: []const u8) !void {
+    // const home_dir = try std.process.getEnvVarOwned(allocator, "HOME");
+    // defer allocator.free(home_dir);
     const savedir_path = try std.fs.path.join(allocator, &.{home_dir, ".config/nestle/saves"});
     defer allocator.free(savedir_path);
-    var threaded: std.Io.Threaded = .init_single_threaded;
-    const io = threaded.ioBasic();
+    const io = threaded.io();
     std.Io.Dir.cwd().access(io, savedir_path, .{.read = true, .write = true}) catch {
-        try std.Io.Dir.cwd().makePath(io, savedir_path);
+        // try std.Io.Dir.cwd().makePath(io, savedir_path);
+        try std.Io.Dir.cwd().createDirPath(io, savedir_path);
     };
     var filenameBuf: [256]u8 = std.mem.zeroes([256]u8);
     const filename = try std.fmt.bufPrint(&filenameBuf, "{X:0>8}.{d}.save", .{self.romCrc32, slotNumber});
@@ -370,27 +373,31 @@ pub fn saveStateToFile(self: *Emulator, allocator: std.mem.Allocator, slotNumber
     if (exists) {
         const backup_path = try std.mem.join(allocator, &.{}, &.{filepath, ".bck"});
         defer allocator.free(backup_path);
-        try std.fs.copyFileAbsolute(filepath, backup_path, .{});
+        try std.Io.Dir.copyFileAbsolute(filepath, backup_path, io, .{});
+        // try std.fs.copyFileAbsolute(filepath, backup_path, .{});
     }
     const _file = try std.Io.Dir.cwd().createFile(io, filepath, .{});
     defer _file.close(io);
-    const file = std.fs.File.adaptFromNewApi(_file);
+    // const file = std.fs.File.adaptFromNewApi(_file);
     var file_buffer: [64*1024]u8 = std.mem.zeroes([64*1024]u8);
-    var writer = file.writer(&file_buffer);
+    var writer = _file.writer(io, &file_buffer);
     try self.saveState(&writer.interface);
     try writer.interface.flush();
     std.debug.print("Jesus saves: {s}\n", .{filepath});
 }
 
-pub fn loadStateFromFile(self: *Emulator, allocator: std.mem.Allocator, slotNumber: u8) !void {
-    const home_dir = try std.process.getEnvVarOwned(allocator, "HOME");
-    defer allocator.free(home_dir);
+pub fn loadStateFromFile(self: *Emulator, allocator: std.mem.Allocator, slotNumber: u8,
+                home_dir: []const u8) !void {
+    // defer allocator.free(home_dir);
     const savedir_path = try std.fs.path.join(allocator, &.{home_dir, ".config/nestle/saves"});
     defer allocator.free(savedir_path);
-    var threaded: std.Io.Threaded = .init_single_threaded;
-    const io = threaded.ioBasic();
+    const io = threaded.io();
+    // var out_buffer: [1024]u8 = std.mem.zeroes([1024]u8);
     std.Io.Dir.cwd().access(io, savedir_path, .{.read = true, .write = true}) catch {
-        try std.Io.Dir.cwd().makePath(io, savedir_path);
+        // const len = try std.Io.Dir.cwd().realPathFile(io, savedir_path, &out_buffer);
+        // _ = &len;
+        try std.Io.Dir.cwd().createDirPath(io, savedir_path);
+        // try std.Io.Dir.cwd().makePath(io, savedir_path);
     };
     var filenameBuf: [256]u8 = std.mem.zeroes([256]u8);
     const filename = try std.fmt.bufPrint(&filenameBuf, "{X:0>8}.{d}.save", .{self.romCrc32, slotNumber});

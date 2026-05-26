@@ -51,13 +51,13 @@ check.dependOn(&exe_check.step);
     });
 
     exe.root_module.addImport("zgui", zgui.module("root"));
-    exe.linkLibrary(zgui.artifact("imgui"));
+    exe.root_module.linkLibrary(zgui.artifact("imgui"));
 
     const zglfw = b.dependency("zglfw", .{
      .target = target,
     });
         exe.root_module.addImport("zglfw", zglfw.module("root"));
-        exe.linkLibrary(zglfw.artifact("glfw"));
+        exe.root_module.linkLibrary(zglfw.artifact("glfw"));
 
      const zopengl = b.dependency("zopengl", .{});
     exe.root_module.addImport("zopengl", zopengl.module("root"));
@@ -68,7 +68,7 @@ check.dependOn(&exe_check.step);
     const zaudio = b.dependency("zaudio", .{});
     exe.root_module.addImport("zaudio", zaudio.module("root"));
     mod.addImport("zaudio", zaudio.module("root"));
-    exe.linkLibrary(zaudio.artifact("miniaudio"));
+    exe.root_module.linkLibrary(zaudio.artifact("miniaudio"));
 
 
     const exe_options = b.addOptions();
@@ -93,8 +93,8 @@ check.dependOn(&exe_check.step);
         // const zpool = b.dependency("zpool", .{});
         // exe.root_module.addImport("zpool", zpool.module("root"));
 
-     exe.addIncludePath(b.path("src"));
-     exe.linkLibC();
+     exe.root_module.addIncludePath(b.path("src"));
+     exe.root_module.link_libc = true;
 
     // const zsdl = b.dependency("zsdl", .{});
 
